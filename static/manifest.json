@@ -1,0 +1,15 @@
+{
+    "name": "Mi'extension",
+    "version": "1.0.0",
+    "manifest_version": 1,
+    "author": "Lawrence Forman <me@merklejerk.com>",
+    "icon": "/hat.svg",
+    "action": {
+        "title": "Mi'extension",
+        "icon": "/hat.svg",
+        "popover": "/action",
+        "width": 382,
+        "height": 256
+    },
+    "background_url": "/"
+}

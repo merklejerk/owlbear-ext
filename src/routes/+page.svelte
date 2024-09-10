@@ -1,0 +1,1 @@
+<!-- background_url page. NOT optional, though the docs say otherwise. -->
