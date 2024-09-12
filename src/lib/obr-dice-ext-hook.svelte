@@ -4,6 +4,8 @@
     import { onMount } from "svelte";
     import _ from 'underscore';
     import { getMessageBus } from "./message-bus.svelte";
+    import { PUBLIC_EXT_ID } from "$env/static/public";
+    import { CRIT_METADATA_ID, type CritMetadata } from "./types";
 
     const obr = getObr();
     const minObrDiceExtRollIdForPlayerConnection = {} as { [connId: string]: number };
@@ -47,7 +49,6 @@
             player.metadata['rodeo.owlbear.dice/rollValues'] as
                 OfficialDiceRollValuesMetadata | undefined,
         ];
-        console.log(player.name, rollValues);
         if (!roll || !rollValues || roll.hidden) {
             return;
         }
@@ -78,7 +79,13 @@
                 }
             }
             if (v === 20) {
-                bus.emit('crit', player.id);
+                obr.room.setMetadata({
+                    [CRIT_METADATA_ID]: {
+                        when: Date.now(),
+                        playerId: player.id,
+                        playerName: player.name,
+                    } as CritMetadata,
+                });
                 return;
             }
         }

@@ -5,4 +5,4 @@
 
 <!-- background_url page. NOT optional, though the docs say otherwise. -->
  <ObrDiceExtHook />
- <CritWatcher />
+ <CritWatcher popupDelay={5000} />
