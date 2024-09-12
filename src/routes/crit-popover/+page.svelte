@@ -22,6 +22,19 @@
             width: 100%;
             height: 100%;
             z-index: -1;
+            animation: spin-in 0.2s cubic-bezier(.43,.89,.86,1.22) none;
+            transform-origin: center;
+
+            @keyframes spin-in {
+                0% {
+                    rotate: -180deg;
+                    scale: 50%;
+                }
+                100% {
+                    rotate: 0deg;
+                    scale: 100%;
+                }
+            }
         }
 
         .text {
@@ -38,18 +51,22 @@
         }
     }
 
+    @function jitter($px) {
+        @return (random($px) - $px / 2 + px) (random($px) - $px / 2 + px);
+    }
+    
     @keyframes text {
         0% {
-            translate: random(4) - 2 + px random(4) - 2 + px;
+            translate: jitter(7);
         }
         25% {
-            translate: random(4) - 2 + px random(4) - 2 + px;
+            translate: jitter(7);
         }
         50% {
-            translate: random(4) - 2 + px random(4) - 2 + px;
+            translate: jitter(7);
         }
         75% {
-            translate: random(4) - 2 + px random(4) - 2 + px;
+            translate: jitter(7);
         }
     }
 

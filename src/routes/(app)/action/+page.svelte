@@ -1,15 +1,16 @@
 <script lang="ts">
     import { PUBLIC_EXT_ID } from "$env/static/public";
     import { getObr } from "$lib/obr-host.svelte";
-    import { CRIT_METADATA_ID, type CritMetadata, type Roll } from "$lib/types";
+    import { type CritMsgData, type Roll } from "$lib/types";
 
     const obr = getObr();
+    const rollHistory = [] as any[];
 
     async function runTest() {
         const playerId = 123;
         const roll: Roll[] = [
             {
-                combination: 'ADD',
+                mode: 'ADD',
                 rolls: [{ sides: 20, result: 20 }],
             },
         ];
@@ -20,18 +21,29 @@
             width: 256,
             height: 256,
             anchorOrigin: { horizontal: 'RIGHT', vertical: 'BOTTOM' },
-            disableClickAway: true,
         });
     }
 
+    async function runMsg() {
+        obr.broadcast.sendMessage(
+            PUBLIC_EXT_ID,
+            { msg: 'hihi' },
+            { destination: 'LOCAL' },
+        );
+    }
+
     async function runCritTest() {
-        obr.room.setMetadata({
-            [CRIT_METADATA_ID]: {
+        obr.broadcast.sendMessage(
+            PUBLIC_EXT_ID,
+            {
+                topic: 'crit',
                 when: Date.now(),
                 playerId: crypto.randomUUID(),
                 playerName: 'test',
-            } as CritMetadata,
-        })
+                rollId: `test-${crypto.randomUUID()}`
+            },
+            { destination: 'LOCAL' },
+        );
     }
 </script>
 
@@ -39,7 +51,17 @@
 
 </style>
 
-<div>
-    <button on:click={() => runTest()}>test</button>
-    <button on:click={() => runCritTest()}>crit!</button>
+<div class="container">
+    <div class="test-controls">
+        <button on:click={() => runTest()}>test</button>
+        <button on:click={() => runCritTest()}>crit!</button>
+        <button on:click={() => runMsg()}>msg!</button>
+    </div>
+    <div class="roll-history">
+        {#each rollHistory as roll}
+        {/each}
+    </div>
+    <div class="roll-input">
+
+    </div>
 </div>

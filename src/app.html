@@ -9,4 +9,21 @@
 	<body>
 		<div style="display: contents">%sveltekit.body%</div>
 	</body>
+	<script lang="javascript">
+		// Hack to help missed OBR_READY events in dev mode.
+		(() => {
+			const params = new URLSearchParams(window.location.search);
+			if (!params.get('obrref')) return;
+			const [origin, roomId] = atob(params.get('obrref')).split(' ');
+			if (!origin || !roomId) return;
+			window.addEventListener('message', e => {
+				if (e.origin === origin && e.data.id === 'OBR_READY') {
+					window.__obr_ready = {
+						origin,
+						...e.data.data,
+					};
+				}
+			});
+		})();
+	</script>
 </html>

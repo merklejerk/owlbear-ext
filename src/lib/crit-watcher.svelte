@@ -3,18 +3,21 @@
     import { getObr } from "./obr-host.svelte";
     import { PUBLIC_EXT_ID } from "$env/static/public";
     import { delay } from "./util";
-    import { CRIT_METADATA_ID, type CritMetadata } from "./types";
+    import { isCritMsg } from "./types";
 
-    interface CritEntry {
-        playerName: string;
-        when: number;
+    interface CritCache {
+        [rollId: string]: {
+            playerId: string;
+            playerName: string;
+            when: number;
+        };
     }
 
     export let popupDelay = 5000;
     const POPOVER_ID = `${PUBLIC_EXT_ID}/crit-popover`;
     const obr = getObr();
     let critCounter = 0;
-    let critStack = [] as CritEntry[];
+    const critCache = {} as CritCache;
 
     async function showCrits(playerNames: string[]): Promise<void> {
         const origCounter = critCounter += 1;
@@ -44,20 +47,31 @@
     function pruneStack() {
         if (popupDelay > 0) {
             const now = Date.now();
-            critStack = critStack.filter(item => now - item.when < popupDelay);
+            for (const rollId in critCache) {
+                const crit = critCache[rollId];
+                if (now - crit.when > popupDelay) {
+                    delete critCache[rollId];
+                }
+            }
         }
     }
 
     onMount(() => {
-        obr.room.onMetadataChange(metadata => {
-            const critData = metadata[CRIT_METADATA_ID] as CritMetadata | undefined;
-            if (!critData) return;
+        obr.broadcast.onMessage(PUBLIC_EXT_ID, msg => {
+            if (!isCritMsg(msg)) return;
+            const { data } = msg;
+            if (popupDelay > 0 && Date.now() - data.when > popupDelay) return;
+            if (data.rollId in critCache) return;
+            critCache[data.rollId] = {
+                playerName: data.playerName,
+                playerId: data.playerId,
+                when: data.when,
+            };
             pruneStack();
-            critStack.push({
-                playerName: critData.playerName,
-                when: critData.when,
-            });
-            showCrits(critStack.map(item => item.playerName));
+            if (Object.keys(critCache).length === 0) {
+                return;
+            }
+            showCrits(Object.values(critCache).map(item => item.playerName));
         });
     });
 </script>

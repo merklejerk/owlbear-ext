@@ -31,12 +31,29 @@
         console.info(`OBR ready on ${$page.url.pathname}`);
         ready = true;
     }
+
+    function tryToBootstrap() {
+        const rdy = (window as any).__obr_ready as { origin: string; userId: string; ref: string; } | undefined;
+        if (!rdy) return;
+        const bus = (obr.broadcast as any).messageBus as any;
+        bus.handleMessage({
+            origin: rdy.origin,
+            data: {
+                id: 'OBR_READY',
+                data: {
+                    userId: rdy.userId,
+                    ref: rdy.ref,
+                },
+            },
+        });
+    }
     
     onMount(() => {
         if (obr.isReady) {
             setReady();
         } else if (obr.isAvailable) {
             obr.onReady(() => setReady());
+            tryToBootstrap();
         } else {
             console.warn('Not loaded in Owlbear!');
         }
