@@ -4,32 +4,90 @@
     export type OBR = typeof OBR_;
     export const CONTEXT_KEY = 'obr' ;
 
-    interface Context {
+    export type PlayerMap = Record<string, PlayerInfo>;
+
+    export interface Context {
         obr: OBR;
         destroyed: boolean;
+        players: Readable<PlayerMap>;
+    }
+
+    export interface PlayerInfo {
+        name: string;
+        role: 'GM' | 'PLAYER';
+        connectionId: string;
+        color: string;
     }
 
     export function getObr(): OBR {
-        const inst = getContext<Context>(CONTEXT_KEY)?.obr;
+        const inst = getContext<Context>(CONTEXT_KEY).obr;
         if (!inst.isReady) {
             throw new Error(`OBR is not ready!`);
         }
         return inst;
     }
+
+    export function getPlayersStore(): Readable<PlayerMap> {
+         return getContext<Context>(CONTEXT_KEY).players;
+    }
 </script>
 
 <script lang="ts">
     import { onMount, setContext } from "svelte";
-    import obr from '@owlbear-rodeo/sdk'
+    import obr, { type Player } from '@owlbear-rodeo/sdk'
     import { page } from "$app/stores";
+    import { readable, type Readable } from "svelte/store";
 
     let ready = false;
-    const ctx: Context = { obr, destroyed: false };
+    let setPlayers: (_: PlayerMap) => void;
+    const players = readable({} as PlayerMap, set_ => {
+        setPlayers = set_;
+    });
+
+    const ctx: Context = { obr, destroyed: false, players };
     setContext(CONTEXT_KEY, ctx);
     
-    function setReady() {
+    async function setReady() {
         console.info(`OBR ready on ${$page.url.pathname}`);
+        updatePlayers([
+            ...await obr.party.getPlayers(),
+            await (async () => {
+                const [
+                    name,
+                    color,
+                    connectionId,
+                    role,
+                ] = await Promise.all([
+                    obr.player.getName(),
+                    obr.player.getColor(),
+                    obr.player.getConnectionId(),
+                    obr.player.getRole(),
+                ]);
+                return {
+                    id: obr.player.id,
+                    name, 
+                    color,
+                    connectionId,
+                    role,
+                } as Player;
+            })(),
+        ]);
+        obr.player.onChange(player => updatePlayers([player]));
+        obr.party.onChange(players => updatePlayers(players));
         ready = true;
+    }
+
+    function updatePlayers(players: Player[]): void {
+        const players_ = $players;
+        for (const player of players) {
+            players_[player.id] = {
+                name: player.name,
+                color: player.color,
+                connectionId: player.connectionId,
+                role: player.role,
+            };
+        }
+        setPlayers(players_);
     }
 
     function tryToBootstrap() {

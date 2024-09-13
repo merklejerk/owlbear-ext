@@ -1,9 +1,10 @@
 <script lang="ts">
     import { onMount } from "svelte";
-    import { getObr } from "./obr-host.svelte";
+    import { getObr, getPlayersStore } from "./obr-host.svelte";
     import { PUBLIC_EXT_ID } from "$env/static/public";
     import { delay } from "./util";
-    import { isCritMsg } from "./types";
+    import { isRollMsg } from "./types";
+    import { isCriticalRoll } from "./rolls";
 
     interface CritCache {
         [rollId: string]: {
@@ -16,6 +17,7 @@
     export let popupDelay = 5000;
     const POPOVER_ID = `${PUBLIC_EXT_ID}/crit-popover`;
     const obr = getObr();
+    const players = getPlayersStore();
     let critCounter = 0;
     const critCache = {} as CritCache;
 
@@ -44,7 +46,7 @@
         }
     }
 
-    function pruneStack() {
+    function pruneCache() {
         if (popupDelay > 0) {
             const now = Date.now();
             for (const rollId in critCache) {
@@ -58,16 +60,17 @@
 
     onMount(() => {
         obr.broadcast.onMessage(PUBLIC_EXT_ID, msg => {
-            if (!isCritMsg(msg)) return;
+            if (!isRollMsg(msg)) return;
             const { data } = msg;
             if (popupDelay > 0 && Date.now() - data.when > popupDelay) return;
             if (data.rollId in critCache) return;
+            if (!data.rolls.some(r => isCriticalRoll(r))) return;
             critCache[data.rollId] = {
-                playerName: data.playerName,
+                playerName: $players[data.playerId]?.name ?? '?',
                 playerId: data.playerId,
                 when: data.when,
             };
-            pruneStack();
+            pruneCache();
             if (Object.keys(critCache).length === 0) {
                 return;
             }

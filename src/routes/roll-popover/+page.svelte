@@ -1,15 +1,16 @@
 <script lang="ts">
     import { page } from "$app/stores";
-    import type { Roll } from "$lib/types";
+    import type { Roll } from "$lib/rolls";
 
     let rolls: Roll[] = [];
 
     $: {
-        console.log($page.params);
+        rolls = JSON.parse($page.params['rolls'] ?? '[]');
     }
 </script>
 
 <div>
     {#each rolls as roll}
+
     {/each}
 </div>
