@@ -26,13 +26,14 @@ jobs:
         run: |
           echo "${{ vars.DOTENV }}" | tr '\r' '\n' >> $GITHUB_ENV
       - name: install deps
+      working-directory: site/
         run: npm i --include=dev
       - name: build
         env:
           BASE_PATH: ''
         run: |
           npm run build
-          touch build/.nojekyll
+          touch site/build/.nojekyll
       - name: commit
         run: |
           git checkout -f --orphan ${{ inputs.build_branch || 'build/public' }} \
