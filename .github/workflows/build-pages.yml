@@ -26,7 +26,7 @@ jobs:
         run: |
           echo "${{ vars.DOTENV }}" | tr '\r' '\n' >> $GITHUB_ENV
       - name: install deps
-      working-directory: site/
+        working-directory: site/
         run: npm i --include=dev
       - name: build
         env:
