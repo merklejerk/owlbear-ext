@@ -29,7 +29,9 @@ jobs:
         run: npm i --include=dev
       - name: populate manifest
         if: ${{ vars.MANIFEST }}
-        run: echo ${{ vars.MANIFEST }} > static/manifest.json
+        env:
+          MANIFEST: ${{ vars.MANIFEST }}
+        run: echo "$MANIFEST" > static/manifest.json
       - name: build
         env:
           BASE_PATH: ''
