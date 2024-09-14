@@ -1,7 +1,7 @@
 <script lang="ts">
     import { onMount } from "svelte";
     import { getObr, getPlayersStore } from "./obr-host.svelte";
-    import { PUBLIC_EXT_ID } from "$env/static/public";
+    import { PUBLIC_EXT_ID, PUBLIC_PATH_PREFIX } from "$env/static/public";
     import { delay } from "./util";
     import { isRollMsg } from "./types";
     import { isCriticalRoll } from "./rolls";
@@ -24,7 +24,7 @@
     async function showCrits(playerNames: string[]): Promise<void> {
         const origCounter = critCounter += 1;
         await obr.popover.open({
-            url: `/crit-popover?${
+            url: `${PUBLIC_PATH_PREFIX}/crit-popover?${
                 new URLSearchParams({
                     players: playerNames.join(','),
                 }).toString()
