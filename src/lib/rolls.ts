@@ -3,23 +3,39 @@ export interface Dice {
     result: number;
 }
 
-export interface Roll {
-    mode: 'MIN' | 'MAX' | 'ADD';
+export type RollCombinationMode = 'MIN' | 'MAX' | 'ADD' | 'SUB';
+
+export interface RollCombination {
+    mode: RollCombinationMode;
     rolls: Array<Roll | Dice | number>;
 }
 
-export function isRoll(r: Roll | Dice | number): r is Roll {
+export type Roll = Dice | RollCombination | number;
+
+export function isCombination(r: Roll): r is RollCombination {
     return typeof(r) === 'object' && !!(r as any).mode;
 }
 
-export function isDice(r: Roll | Dice | number): r is Dice {
+export function isDice(r: Roll): r is Dice {
     return typeof(r) === 'object' && !(r as any).mode;
 }
 
-export function getRollResult(roll: Roll | Dice | number): number {
-    if (isRoll(roll)) {
+export function isEmptyRoll(roll: Roll): boolean {
+    if (isCombination(roll)) {
+        return roll.rolls.length === 0 || roll.rolls.every(r => isEmptyRoll(r));
+    }
+    if (isDice(roll)) {
+        return false;
+    }
+    return roll === 0;
+}
+
+export function getRollResult(roll: Roll): number {
+    if (isCombination(roll)) {
         if (roll.mode === 'ADD') {
             return roll.rolls.reduce((a: number, r) => a + getRollResult(r), 0);
+        } else if (roll.mode === 'SUB') {
+            return roll.rolls.reduce((a: number, r) => a - getRollResult(r), 0);
         } else if (roll.rolls.length !== 0) {
             return roll.rolls.slice(1).reduce(
                 roll.mode === 'MAX'
@@ -35,14 +51,14 @@ export function getRollResult(roll: Roll | Dice | number): number {
     return roll;
 }
 
-export function reroll<T extends Roll | Dice>(roll: T): T {
-    if (isRoll(roll)) {
+export function reroll<T extends Roll>(roll: T): T {
+    if (isCombination(roll)) {
         for (const r of roll.rolls) {
             if (typeof(r) !== 'number') {
                 reroll(r);
             }
         }
-    } else {
+    } else if (isDice(roll)) {
         roll.result = rollDice(roll.sides);
     }
     return roll;
@@ -65,8 +81,8 @@ export function toRollFormula(roll: Roll): string {
     return '1d20';
 }
 
-export function isCriticalRoll(roll: Roll | Dice | number): boolean {
-    if (isRoll(roll)) {
+export function isCriticalRoll(roll: Roll): boolean {
+    if (isCombination(roll)) {
         if (roll.rolls.length === 0) {
             return false;
         }
@@ -81,6 +97,19 @@ export function isCriticalRoll(roll: Roll | Dice | number): boolean {
     return false;
 }
 
-export function simplifyRoll(roll: Roll | Dice | number): Roll | Dice | number {
-    // TODO
+export function simplifyRoll(roll: Roll): Roll {
+    if (isCombination(roll)) {
+        if (roll.rolls.length === 1) {
+            return roll.rolls[0];
+        }
+        return {
+            ...roll,
+            rolls: roll.rolls.map(r => simplifyRoll(r)),
+        };
+    } else if (isDice(roll)) {
+        if (roll.sides === 1) {
+            return 1;
+        }
+    }
+    return roll;
 }

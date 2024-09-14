@@ -1,7 +1,18 @@
+<script lang="ts" context="module">
+    import { PUBLIC_EXT_ID } from "$env/static/public";
+    export const POPOVER_ID = `${PUBLIC_EXT_ID}/crit-popover`;
+</script>
+
 <script lang="ts">
     import { page } from "$app/stores";
+    import { getObr } from "$lib/obr-host.svelte";
 
     const playerNames = ($page.url.searchParams.get('players') ?? '').split(',');
+    const obr = getObr();
+
+    function clicked() {
+        obr.popover.close(POPOVER_ID);
+    }
 </script>
 
 <style lang="scss">
@@ -75,9 +86,10 @@
         position: fixed;
         inset: 0;
         display: flex;
+        user-select: none;
     }
 </style>
-<div class="component">
+<div class="component" on:click={() => clicked()}>
     <div class="fedora"></div>
     {#each playerNames as playerName}
     <div class="text"><span class="name">{playerName}</span> rolled a critical!</div>

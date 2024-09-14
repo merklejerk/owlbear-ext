@@ -4,12 +4,14 @@
     export type OBR = typeof OBR_;
     export const CONTEXT_KEY = 'obr' ;
 
+    export type ThemeMode = 'DARK' | 'LIGHT';
     export type PlayerMap = Record<string, PlayerInfo>;
 
     export interface Context {
         obr: OBR;
         destroyed: boolean;
         players: Readable<PlayerMap>;
+        theme: Readable<ThemeMode>;
     }
 
     export interface PlayerInfo {
@@ -30,21 +32,24 @@
     export function getPlayersStore(): Readable<PlayerMap> {
          return getContext<Context>(CONTEXT_KEY).players;
     }
+
+    export function getTheme(): Readable<ThemeMode> {
+         return getContext<Context>(CONTEXT_KEY).theme;
+    }
 </script>
 
 <script lang="ts">
     import { onMount, setContext } from "svelte";
-    import obr, { type Player } from '@owlbear-rodeo/sdk'
+    import obr, { type Player, type Theme } from '@owlbear-rodeo/sdk'
     import { page } from "$app/stores";
-    import { readable, type Readable } from "svelte/store";
+    import { writable, type Readable } from "svelte/store";
 
+    let styleVars = {};
     let ready = false;
-    let setPlayers: (_: PlayerMap) => void;
-    const players = readable({} as PlayerMap, set_ => {
-        setPlayers = set_;
-    });
+    const themeMode = writable<ThemeMode>('DARK');
+    const players = writable<PlayerMap>({});
 
-    const ctx: Context = { obr, destroyed: false, players };
+    const ctx: Context = { obr, destroyed: false, players, theme: themeMode };
     setContext(CONTEXT_KEY, ctx);
     
     async function setReady() {
@@ -72,9 +77,22 @@
                 } as Player;
             })(),
         ]);
+        updateTheme(await obr.theme.getTheme());
+        obr.theme.onChange(updateTheme);
         obr.player.onChange(player => updatePlayers([player]));
         obr.party.onChange(players => updatePlayers(players));
         ready = true;
+    }
+
+    function updateTheme(theme: Theme): void {
+        styleVars = {
+            '--theme-text-color': theme.text.primary,
+            '--theme-text2-color': theme.text.secondary,
+            '--theme-primary-color': theme.primary.main,
+            '--theme-secondary-color': theme.secondary.main,
+            '--theme-mode': theme.mode,
+        };
+        $themeMode = theme.mode;
     }
 
     function updatePlayers(players: Player[]): void {
@@ -87,7 +105,7 @@
                 role: player.role,
             };
         }
-        setPlayers(players_);
+        $players = players_;
     }
 
     function tryToBootstrap() {
@@ -122,7 +140,21 @@
     });
 </script>
 
-<div>
+
+<style lang="scss">
+    .root {
+        --theme-text-color: initial;
+        --theme-text2-color: initial;
+        --theme-primary-color: cornflowerblue;
+        --theme-secondary-color: conrflowerblue;
+        --theme-mode: 'DARK';
+        display: contents;
+        color: var(--theme-text-color, initial);
+        font-family: sans-serif;
+    }
+</style>
+
+<div class="root" style={Object.entries(styleVars).map(([k,v]) => `${k}: ${v}`).join(';')}>
 {#if ready}
 <slot />
 {/if}

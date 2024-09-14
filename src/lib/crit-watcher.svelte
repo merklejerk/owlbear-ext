@@ -5,6 +5,7 @@
     import { delay } from "./util";
     import { isRollMsg } from "./types";
     import { isCriticalRoll } from "./rolls";
+    import { POPOVER_ID } from "../routes/(app)/crit-popover/+page.svelte";
 
     interface CritCache {
         [rollId: string]: {
@@ -15,7 +16,6 @@
     }
 
     export let popupDelay = 5000;
-    const POPOVER_ID = `${PUBLIC_EXT_ID}/crit-popover`;
     const obr = getObr();
     const players = getPlayersStore();
     let critCounter = 0;

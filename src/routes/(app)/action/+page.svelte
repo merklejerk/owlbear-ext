@@ -1,7 +1,8 @@
 <script lang="ts">
-    import { PUBLIC_EXT_ID } from "$env/static/public";
+    import { PUBLIC_DEV_MODE, PUBLIC_EXT_ID } from "$env/static/public";
     import { getObr, getPlayersStore } from "$lib/obr-host.svelte";
-    import { getRollResult, parseRolls, toRollFormula, type Roll } from "$lib/rolls";
+    import RollPrinter from "$lib/roll-printer.svelte";
+    import { getRollResult, isCriticalRoll, parseRolls, type Roll } from "$lib/rolls";
     import { isRollMsg, type RollMsgData } from "$lib/types";
     import { onMount } from "svelte";
 
@@ -15,6 +16,7 @@
     const obr = getObr();
     const players = getPlayersStore();
     let rollHistory = [] as RollHistoryItem[];
+    let historyElement: HTMLElement;
 
     async function submitRoll() {
         const rolls = parseRolls('');
@@ -41,11 +43,58 @@
     }
 
     async function runMsg() {
-        obr.broadcast.sendMessage(
-            PUBLIC_EXT_ID,
-            { msg: 'hihi' },
-            { destination: 'LOCAL' },
-        );
+        // const md = await obr.player.getMetadata();
+        // const lastId = Number((md['rodeo.owlbear.dice/roll'] as any)?.id ?? '0');
+        // console.log(lastId);
+        const id = '4';
+        obr.player.setMetadata({
+            "rodeo.owlbear.dice/roll": {
+                "dice": [
+                    {
+                        "id": id,
+                        "style": "GALAXY",
+                        "type": "D20"
+                    }
+                ],
+                "bonus": 0,
+                "hidden": false
+            },
+            "rodeo.owlbear.dice/rollThrows": {
+                [id]: {
+                    "position": {
+                        "x": 0.20537940271938376,
+                        "y": 1.1449740242507513,
+                        "z": 0.05277898777306045
+                    },
+                    "rotation": {
+                        "x": 0.3198192930153163,
+                        "y": -0.6380895309264671,
+                        "z": 0.6235898458538826,
+                        "w": -0.3188935159032798
+                    },
+                    "linearVelocity": {
+                        "x": -1.7964689400944611,
+                        "y": 0,
+                        "z": -0.4616617390473094
+                    },
+                    "angularVelocity": {
+                        "x": 2.697357524254186,
+                        "y": 5.753645908644349,
+                        "z": 2.077194140139361
+                    }
+                }
+            },
+            "rodeo.owlbear.dice/rollValues": {
+                [id]: null
+            },
+            "rodeo.owlbear.dice/rollTransforms": {
+                [id]: null
+            }
+        });
+        setTimeout(async () => {
+            const md = await obr.player.getMetadata();
+            console.log(md['rodeo.owlbear.dice/rollValues']);
+        }, 2000);
     }
 
     async function runCritTest() {
@@ -72,7 +121,12 @@
                 rollId: msg.data.rollId,
                 when: msg.data.when,
             });
-            rollHistory = rollHistory;
+            rollHistory = rollHistory.slice(-100);
+            const autoScroll = Math.ceil(historyElement.scrollTop) >=
+                Math.floor(historyElement.scrollHeight - historyElement.clientHeight);
+            if (autoScroll) {
+                setTimeout(() => historyElement.scrollTop = historyElement.scrollHeight, 10);
+            }
         });
     });
 </script>
@@ -91,14 +145,11 @@
             flex: 1 0;
             width: 100%;
             overflow: auto;
-            color: white;
             margin: 0.5em 0;
     
             > .item {
-                display: flex;
-                flex-direction: row;
-                gap: 1ex;
-
+                margin-left: 2ex;
+                text-indent: -2ex;
                 &:not(:last-child) {
                     margin-bottom: 0.15em;
                 }
@@ -111,6 +162,18 @@
     
                 > .timestamp {
                     display: none;
+                }
+
+                > .results {
+                    > .result {
+                        font-weight: bold;
+                    }
+                }
+            }
+
+            > .item.critical {
+                > :not(.prefix, .timestamp) {
+                    color: orangered;
                 }
             }
         }
@@ -125,33 +188,39 @@
             }
         }
     }
+
+    .container:not(.dev) {
+        .roll-input, .test-controls {
+            display: none;
+        }
+    }
 </style>
 
-<div class="container">
+<div class="container" class:dev={!!PUBLIC_DEV_MODE}>
     <div class="test-controls">
         <button on:click={() => runCritTest()}>crit!</button>
         <button on:click={() => runMsg()}>msg!</button>
     </div>
-    <div class="roll-history">
+    <div class="roll-history" bind:this={historyElement}>
         {#each rollHistory as item, idx (idx)}
-        <div class="item">
-            <div class="timestamp">
+        <div class="item" class:critical={item.rolls.some(r => isCriticalRoll(r))}>
+            <span class="timestamp">
                 {new Date(item.when).toLocaleTimeString()}
-            </div>
-            <div class="prefix">
+            </span>
+            <span class="prefix">
                 <span class="name">{$players[item.playerId]?.name ?? '?'}</span>:
-            </div>
-            <div class="formula">
+            </span>
+            <span class="formulas">
                 {#each item.rolls as roll, idx (idx)}
-                <span class="roll">{toRollFormula(roll)}</span>
+                <RollPrinter {roll} />
                 {/each}
-            </div>
-            <div class="result">
+            </span>
+            <span class="results">
                 =
                 {#each item.rolls as roll, idx (idx)}
                 <span class="result">{getRollResult(roll)}</span>
                 {/each}
-            </div>
+            </span>
         </div>
         {/each}
     </div>

@@ -8,8 +8,8 @@
         "title": "Mi'extension",
         "icon": "/hat.svg",
         "popover": "/action",
-        "width": 382,
-        "height": 256
+        "width": 450,
+        "height": 384
     },
     "background_url": "/"
 }

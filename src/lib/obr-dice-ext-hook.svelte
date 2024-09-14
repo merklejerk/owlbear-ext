@@ -1,10 +1,10 @@
 <script lang="ts">
     import { getObr } from "$lib/obr-host.svelte";
-    import type { Player } from "@owlbear-rodeo/sdk";
+    import type { Metadata, Player } from "@owlbear-rodeo/sdk";
     import { onMount } from "svelte";
     import { type RollMsgData } from "./types";
     import { PUBLIC_EXT_ID } from "$env/static/public";
-    import type { Roll } from "./rolls";
+    import { isEmptyRoll, simplifyRoll, type Roll, type RollCombinationMode } from "./rolls";
 
     const obr = getObr();
     const minDiceIdForPlayer = {} as { [playerId: string]: number };
@@ -58,81 +58,118 @@
         return [Number(dice.id)];
     }
 
+    function isD100Roll(roll: OfficialDiceRollMetadataDiceCombination): boolean {
+        if (roll.combination) return false;
+        if (roll.dice.length !== 2) return false;
+        if (roll.dice.some(d => isCombinationDice(d))) return false;
+        const dice = roll.dice as OfficialDiceRollMetadataDice[];
+        return dice[0].type === 'D100' && dice[1].type === 'D10';
+    }
+
+    function getD100RollResult(dice: OfficialDiceRollMetadataDice[], rollValues: OfficialDiceRollValuesMetadata): number {
+        const r100 = rollValues[dice[0].id]!;
+        const r10 = rollValues[dice[1].id]!;
+        if (r100 === 0 && r10 === 0) {
+            return 100;
+        }
+        return r100 + r10;
+    }
+
     function translateRoll(
         roll: OfficialDiceRollMetadata,
         rollValues: OfficialDiceRollValuesMetadata,
     ): Roll {
-        const translated: Roll = {
-            mode: 'ADD',
-            rolls: [],
-        };
+        const childRolls = [] as Roll[];
         for (const d of roll.dice) {
             if (isCombinationDice(d)) {
-                let mode = 'ADD';
-                if (d.combination === 'HIGHEST') {
-                    mode = 'MAX';
-                } else if (d.combination === 'LOWEST') {
-                    mode = 'MIN';
-                }
-                translated.rolls.push({
-                    mode: mode as 'ADD' | 'MIN' | 'MAX',
-                    rolls: d.dice.map(d =>
-                        translateRoll(
-                            {
-                                bonus: 0,
-                                dice: [d],
-                                hidden: false,
-                            },
-                            rollValues,
+                if (isD100Roll(d)) {
+                    childRolls.push({
+                        sides: 100,
+                        result: getD100RollResult(d.dice as OfficialDiceRollMetadataDice[], rollValues),
+                    });
+                } else {
+                    let mode: RollCombinationMode = 'ADD';
+                    if (d.combination === 'HIGHEST') {
+                        mode = 'MAX';
+                    } else if (d.combination === 'LOWEST') {
+                        mode = 'MIN';
+                    }
+                    childRolls.push({
+                        mode: mode,
+                        rolls: d.dice.map(d =>
+                            translateRoll(
+                                {
+                                    bonus: 0,
+                                    dice: [d],
+                                    hidden: false,
+                                },
+                                rollValues,
+                            ),
                         ),
-                    ),
-                });
+                    });
+                }
             } else {
-                translated.rolls.push({
-                    sides: toSides(d.type),
-                    result: rollValues[d.id]!,
+                const sides = toSides(d.type);
+                const result = rollValues[d.id]!;
+                childRolls.push({
+                    sides,
+                    result: sides === 10 && result === 0 ? 10 : result,
                 });
             }
         }
         if (roll.bonus) {
-            translated.rolls.push(roll.bonus);
+            childRolls.push(roll.bonus);
         }
-        return translated;
+        if (childRolls.length === 0) {
+            return 0;
+        }
+        return {
+            mode: 'ADD',
+            rolls: childRolls,
+        };
     }
 
-    function handlePlayer(player: Player): void {
+    function consumeMetadata(connId: string, metadata: Metadata)
+        : {
+            maxDiceId: number;
+            roll: OfficialDiceRollMetadata;
+            rollValues: OfficialDiceRollValuesMetadata
+        } | undefined
+    {
         const [roll, rollValues] = [
-            player.metadata['rodeo.owlbear.dice/roll'] as
+            metadata['rodeo.owlbear.dice/roll'] as
                 OfficialDiceRollMetadata | undefined,
-            player.metadata['rodeo.owlbear.dice/rollValues'] as
+            metadata['rodeo.owlbear.dice/rollValues'] as
                 OfficialDiceRollValuesMetadata | undefined,
         ];
-        if (!roll || !rollValues) {
-            return;
-        }
+        if (!roll || !rollValues) return;
         const diceIds = getDiceIds(roll.dice);
-        if (diceIds.length === 0) {
-            return;
-        }
+        if (diceIds.length === 0) return;
         // At least one dice must be new.
-        const minDiceId = minDiceIdForPlayer[player.id] ?? 0;
-        if (!diceIds.some(id => id >= minDiceId)) {
-            return;
-        }
+        const minDiceId = minDiceIdForPlayer[connId] ?? 0;
+        if (!diceIds.some(id => id >= minDiceId)) return;
         // All dice values must be set.
-        if (diceIds.some(id => typeof rollValues[id] !== 'number')) {
-            return;
-        }
+        if (diceIds.some(id => typeof rollValues[id] !== 'number')) return;
         const maxDiceId = diceIds.reduce((a, v) => Math.max(a, v));
-        minDiceIdForPlayer[player.id] = Math.max(
+        minDiceIdForPlayer[connId] = Math.max(
             maxDiceId + 1,
-            minDiceIdForPlayer[player.id] ?? 0,
+            minDiceIdForPlayer[connId] ?? 0,
         );
-        const rollId = `${player.id}-${maxDiceId}`;
+        return {
+            maxDiceId,
+            roll,
+            rollValues,
+        };
+    }
+
+    function handlePlayerChange(player: Player): void {
+        const r = consumeMetadata(player.connectionId, player.metadata);
+        if (!r) return;
+        const rollId = `${player.connectionId}-${r.maxDiceId}`;
 
         // Translate roll history.
-        const translated = translateRoll(roll, rollValues);
-        if (translated.rolls.length !== 0) {
+        const translated = simplifyRoll(translateRoll(r.roll, r.rollValues));
+        if (!isEmptyRoll(translated)) {
             obr.broadcast.sendMessage(
                 PUBLIC_EXT_ID,
                 {
@@ -153,9 +190,27 @@
     }
 
     onMount(() => {
-        obr.player.onChange(handlePlayer);
-        obr.party.onChange(players => {
-            players.forEach(handlePlayer);
-        });
+        (async () => {
+            await Promise.all([
+                (async () => { 
+                    consumeMetadata(
+                        ...await Promise.all([
+                            obr.player.getConnectionId(),
+                            obr.player.getMetadata(),
+                        ]),
+                    );
+                })(),
+                (async () => {
+                    const players = await obr.party.getPlayers();
+                    for (const p of players) {
+                        consumeMetadata(p.id, p.metadata);
+                    }
+                })(),
+            ])
+            obr.player.onChange(handlePlayerChange);
+            obr.party.onChange(players => {
+                players.forEach(handlePlayerChange);
+            });
+        })();
     });
 </script>
