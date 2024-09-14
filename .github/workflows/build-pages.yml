@@ -37,10 +37,10 @@ jobs:
         run: |
           git checkout -f --orphan ${{ inputs.build_branch || 'build/public' }} \
           && git reset \
-          && git add -f build \
+          && git add -f site/build \
           && git config user.name 'github-actions' \
           && git config user.email 'actions@github.com' \
           && git commit -m 'build' \
-          && git subtree split --prefix build -b tmp \
+          && git subtree split --prefix site/build -b tmp \
           && git push -f -u origin tmp:${{ inputs.build_branch || 'build/public' }}
  
