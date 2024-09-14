@@ -27,6 +27,9 @@ jobs:
           echo "${{ vars.DOTENV }}" | tr '\r' '\n' >> $GITHUB_ENV
       - name: install deps
         run: npm i --include=dev
+      - name: populate manifest
+        if: ${{ vars. MANIFEST }}
+        run: echo "${{ vars.MANIFEST }}" > 'manifest.json'
       - name: build
         env:
           BASE_PATH: ''
