@@ -26,23 +26,21 @@ jobs:
         run: |
           echo "${{ vars.DOTENV }}" | tr '\r' '\n' >> $GITHUB_ENV
       - name: install deps
-        working-directory: site/
         run: npm i --include=dev
       - name: build
         env:
           BASE_PATH: ''
-        working-directory: site/
         run: |
           npm run build
-          touch site/build/.nojekyll
+          touch build/.nojekyll
       - name: commit
         run: |
           git checkout -f --orphan ${{ inputs.build_branch || 'build/public' }} \
           && git reset \
-          && git add -f site/build \
+          && git add -f build \
           && git config user.name 'github-actions' \
           && git config user.email 'actions@github.com' \
           && git commit -m 'build' \
-          && git subtree split --prefix site/build -b tmp \
+          && git subtree split --prefix build -b tmp \
           && git push -f -u origin tmp:${{ inputs.build_branch || 'build/public' }}
  
