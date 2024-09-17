@@ -73,15 +73,6 @@
     .formula.child::before {
         content: var(--combo-operator, '');
     }
-    // :global(.combo.sub > .roll) > .formula.child::before {
-    //     content: ' - ';
-    // }
-    // :global(.combo.add > .roll > .formula > .combo.sub > .roll) > .formula.child::before {
-    //     content: ' - ';
-    // }
-    // :global(.formula:not(.child) > .combo > .roll:first-child) > .formula.child::before {
-    //     content: '';
-    // }
     
     .formula {
         display: contents;
