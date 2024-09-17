@@ -117,7 +117,7 @@ export function simplifyRoll(roll: Roll): Roll {
             ...roll,
             rolls: roll.rolls.map(r => simplifyRoll(r)),
         });
-        if (roll.rolls.length === 1 && roll.mode !== 'ADD') {
+        if (roll.rolls.length === 1 && roll.mode !== 'SUB') {
             return roll.rolls[0];
         }
     } else if (isDice(roll)) {
@@ -144,14 +144,9 @@ export function simplifyRoll(roll: Roll): Roll {
 function mergeSubRolls(roll: RollCombination): RollCombination {
     if (roll.rolls.length === 0) return roll;
     if (!['ADD', 'SUB'].includes(roll.mode)) return roll;
-    const merged = { ...roll, rolls: [] } as RollCombination;
-    merged.rolls.push(roll.rolls[0]);
+    const merged = { ...roll, rolls: roll.rolls.slice(0, 1) } as RollCombination;
     for (const r of roll.rolls.slice(1)) {
-        let prev = roll.rolls[merged.rolls.length - 1];
-        if (isCombination(prev)) {
-            merged.rolls.push(r);
-            continue;
-        }
+        let prev = merged.rolls[merged.rolls.length - 1];
         if ((isDice(r) || isDiceGroup(r)) && (isDice(prev) || isDiceGroup(prev))) {
             if (r.sides === prev.sides) {
                 if (isDice(prev)) {
@@ -161,10 +156,15 @@ function mergeSubRolls(roll: RollCombination): RollCombination {
                     };
                 }
                 prev.results.push(...(isDice(r) ? [r.result] : r.results));
+                continue;
             }
-        } else if (typeof r === 'number' && typeof prev === 'number') {
-            prev = roll.mode === 'ADD' ? prev + r : prev - r;
+        } else if (typeof r === 'number') {
+            if (typeof prev === 'number') {
+                merged.rolls[merged.rolls.length - 1] = prev =
+                    roll.mode === 'ADD' ? prev + r : prev - r;
+            }
         }
+        merged.rolls.push(r);
     }
     return merged;
 }
