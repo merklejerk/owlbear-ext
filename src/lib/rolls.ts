@@ -3,21 +3,30 @@ export interface Dice {
     result: number;
 }
 
+export interface DiceGroup {
+    sides: number;
+    results: number[];
+}
+
 export type RollCombinationMode = 'MIN' | 'MAX' | 'ADD' | 'SUB';
 
 export interface RollCombination {
     mode: RollCombinationMode;
-    rolls: Array<Roll | Dice | number>;
+    rolls: Array<Roll>;
 }
 
-export type Roll = Dice | RollCombination | number;
+export type Roll = Dice | DiceGroup | RollCombination | number;
 
 export function isCombination(r: Roll): r is RollCombination {
     return typeof(r) === 'object' && !!(r as any).mode;
 }
 
 export function isDice(r: Roll): r is Dice {
-    return typeof(r) === 'object' && !(r as any).mode;
+    return typeof(r) === 'object' && typeof (r as any).result === 'number';
+}
+
+export function isDiceGroup(r: Roll): r is DiceGroup {
+    return typeof(r) === 'object' && Array.isArray((r as any).results);
 }
 
 export function isEmptyRoll(roll: Roll): boolean {
@@ -47,6 +56,8 @@ export function getRollResult(roll: Roll): number {
         return 0;
     } else if (isDice(roll)) {
         return roll.result;
+    } else if (isDiceGroup(roll)) {
+        return roll.results.reduce((a, v) => v + a, 0);
     }
     return roll;
 }
@@ -99,17 +110,61 @@ export function isCriticalRoll(roll: Roll): boolean {
 
 export function simplifyRoll(roll: Roll): Roll {
     if (isCombination(roll)) {
-        if (roll.rolls.length === 1) {
-            return roll.rolls[0];
+        if (roll.rolls.length === 0) {
+            return 0;
         }
-        return {
+        roll = mergeSubRolls({
             ...roll,
             rolls: roll.rolls.map(r => simplifyRoll(r)),
-        };
+        });
+        if (roll.rolls.length === 1 && roll.mode !== 'ADD') {
+            return roll.rolls[0];
+        }
     } else if (isDice(roll)) {
         if (roll.sides === 1) {
             return 1;
         }
+        if (roll.sides === 0) {
+            return roll.result;
+        }
+    } else if (isDiceGroup(roll)) {
+        if (roll.sides === 1) {
+            return roll.results.length;
+        }
+        if (roll.sides === 0) {
+            return roll.results.reduce((a, v) => a + v, 0);
+        }
+        if (roll.results.length === 1) {
+            return { sides: roll.sides, result: roll.results[0] };
+        }
     }
     return roll;
+}
+
+function mergeSubRolls(roll: RollCombination): RollCombination {
+    if (roll.rolls.length === 0) return roll;
+    if (!['ADD', 'SUB'].includes(roll.mode)) return roll;
+    const merged = { ...roll, rolls: [] } as RollCombination;
+    merged.rolls.push(roll.rolls[0]);
+    for (const r of roll.rolls.slice(1)) {
+        let prev = roll.rolls[merged.rolls.length - 1];
+        if (isCombination(prev)) {
+            merged.rolls.push(r);
+            continue;
+        }
+        if ((isDice(r) || isDiceGroup(r)) && (isDice(prev) || isDiceGroup(prev))) {
+            if (r.sides === prev.sides) {
+                if (isDice(prev)) {
+                    merged.rolls[merged.rolls.length - 1] = prev = {
+                        sides: prev.sides,
+                        results: [prev.result]
+                    };
+                }
+                prev.results.push(...(isDice(r) ? [r.result] : r.results));
+            }
+        } else if (typeof r === 'number' && typeof prev === 'number') {
+            prev = roll.mode === 'ADD' ? prev + r : prev - r;
+        }
+    }
+    return merged;
 }

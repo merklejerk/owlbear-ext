@@ -1,12 +1,11 @@
 <script lang="ts">
-    import { isCombination, isDice, type Dice, type Roll, type RollCombination } from "./rolls";
+    import { isCombination, isDice, simplifyRoll, type Dice, type Roll, type RollCombination } from "./rolls";
 
     export let roll: Roll;
     export let parent: RollCombination | undefined = undefined;
 
     interface CoalescedRoll {
-        kind: 'ADVANTAGE' | 'DISADVANTAGE' | 'BATCHED';
-        sides: number;
+        kind: 'ADVANTAGE' | 'DISADVANTAGE';
         dice: DiceGroup[];
     }
 
@@ -62,27 +61,13 @@
         if (groups[0].results.length !== groups[1].results.length) return;
         return {
             kind: roll.mode === 'MIN' ? 'DISADVANTAGE' : 'ADVANTAGE',
-            sides: groups[0].sides,
             dice: groups,
-        };
-    }
-
-    function tryCoalesceToBatch(roll: RollCombination): CoalescedRoll | undefined {
-        if (roll.rolls.length === 0) return;
-        if (!['ADD', 'SUB'].includes(roll.mode)) return;
-        const groups = roll.rolls.map(r => tryReduceToDiceGroup(r));
-        if (!areValidDiceGroups(groups)) return;
-        if (!areCompatibleDiceGroups(groups)) return;
-        return {
-            kind: 'BATCHED',
-            sides: groups[0].sides,
-            dice: [ tryMergeDiceGroups(groups)! ],
         };
     }
 
     function tryCoaleseRoll(roll: Roll): CoalescedRoll | undefined {
         if (!isCombination(roll)) return;
-        return tryCoalesceToAdvantage(roll) ?? tryCoalesceToBatch(roll);
+        return tryCoalesceToAdvantage(roll);
     }
 
 </script>
@@ -177,7 +162,7 @@
     </span>
     {:else}
     <span class="spec">
-        {coal.dice[0].results.length}d{coal.sides}<!--
+        {coal.dice[0].results.length}d{coal.dice[0].sides}<!--
         -->{#if coal.kind === 'ADVANTAGE'}a{:else if coal.kind === 'DISADVANTAGE'}d{/if}
     </span>
     <span class="dice-results"><!--

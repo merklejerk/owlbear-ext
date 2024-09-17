@@ -63,7 +63,7 @@
     }
 
     @function jitter($px) {
-        @return (random($px) - $px / 2 + px) (random($px) - $px / 2 + px);
+        @return (calc(random($px) - $px / 2) + px) (calc(random($px) - $px / 2) + px);
     }
     
     @keyframes text {
