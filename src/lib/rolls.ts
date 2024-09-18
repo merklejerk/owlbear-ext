@@ -1,3 +1,5 @@
+import ohm from '$lib/ohm/rolls.ohm-bundle';
+
 export interface Dice {
     sides: number;
     result: number;
@@ -167,4 +169,21 @@ function mergeSubRolls(roll: RollCombination): RollCombination {
         merged.rolls.push(r);
     }
     return merged;
+}
+
+function parseRollSpec(spec: string): Roll[] {
+    const sem = ohm.createSemantics();
+    sem.addOperation('parse(',
+        {
+            integer(digits): number {
+                return Number(digits.sourceString);
+            },
+            LiteralRoll(value): Roll {
+                return value;
+            },
+            diceRoll(nDice?: number, _: string, nCount, )
+        },
+    );
+    sem.extendOperation('LiteralRoll(d)', actions);
+
 }

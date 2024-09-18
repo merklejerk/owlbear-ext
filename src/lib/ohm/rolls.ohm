@@ -1,0 +1,31 @@
+Rolls {
+	Rolls
+   		= (NonemptyListOf<Roll, ","> | NonemptyListOf<Roll, " ">)+
+    
+    Roll
+    	= ArithmeticRoll | MinMaxRoll | advantageRoll | SignedRoll | diceRoll | LiteralRoll
+    
+    MinMaxRoll
+    	= (caseInsensitive<"min"> | caseInsensitive<"max">) "(" Rolls ")"
+    
+    ArithmeticRoll
+    	= Roll operator Roll
+        
+    SignedRoll
+    	= operator Roll
+        
+    LiteralRoll
+    	= integer
+
+    integer
+        = digit+
+    
+    operator
+    	= "-" | "+"
+        
+    diceRoll
+    	= #(integer? caseInsensitive<"d"> integer)
+    
+    advantageRoll
+    	= diceRoll #(caseInsensitive<"a"> | caseInsensitive<"d">)
+}
