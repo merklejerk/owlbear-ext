@@ -239,7 +239,7 @@
         </div>
         {/each}
     </div>
-    <form class="roll-input" on:submit|preventDefault={() => submitRoll()}>
+    <form class="roll-input" action="#" on:submit|preventDefault={() => submitRoll()}>
         <input tabindex="0" type="text" autofocus bind:value={rollInput} placeholder="1d20" />
         <input tabindex="0" type="submit" />
     </form>
