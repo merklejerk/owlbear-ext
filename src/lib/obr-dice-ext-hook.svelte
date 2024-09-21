@@ -4,7 +4,7 @@
     import { onMount } from "svelte";
     import { type RollMsgData } from "./types";
     import { PUBLIC_EXT_ID } from "$env/static/public";
-    import { isEmptyRoll, simplifyRoll, type Roll, type RollCombinationMode } from "./rolls";
+    import { BinaryRollMode, createBinaryRollChain, isEmptyRoll, simplifyRoll, type Roll } from "./rolls";
 
     const obr = getObr();
     const minDiceIdForPlayer = {} as { [playerId: string]: number };
@@ -66,7 +66,10 @@
         return dice[0].type === 'D100' && dice[1].type === 'D10';
     }
 
-    function getD100RollResult(dice: OfficialDiceRollMetadataDice[], rollValues: OfficialDiceRollValuesMetadata): number {
+    function getD100RollResult(
+        dice: OfficialDiceRollMetadataDice[],
+        rollValues: OfficialDiceRollValuesMetadata,
+    ): number {
         const r100 = rollValues[dice[0].id]!;
         const r10 = rollValues[dice[1].id]!;
         if (r100 === 0 && r10 === 0) {
@@ -85,35 +88,38 @@
                 if (isD100Roll(d)) {
                     childRolls.push({
                         sides: 100,
-                        result: getD100RollResult(d.dice as OfficialDiceRollMetadataDice[], rollValues),
+                        results: [getD100RollResult(
+                            d.dice as OfficialDiceRollMetadataDice[],
+                            rollValues,
+                        )],
                     });
                 } else {
-                    let mode: RollCombinationMode = 'ADD';
+                    let mode = BinaryRollMode.ADD;
                     if (d.combination === 'HIGHEST') {
-                        mode = 'MAX';
+                        mode = BinaryRollMode.MAX;
                     } else if (d.combination === 'LOWEST') {
-                        mode = 'MIN';
+                        mode = BinaryRollMode.MIN;
                     }
-                    childRolls.push({
-                        mode: mode,
-                        rolls: d.dice.map(d =>
-                            translateRoll(
+                    childRolls.push(
+                        createBinaryRollChain(
+                            mode,
+                            d.dice.map(d => translateRoll(
                                 {
                                     bonus: 0,
                                     dice: [d],
                                     hidden: false,
                                 },
                                 rollValues,
-                            ),
+                            )),
                         ),
-                    });
+                    );
                 }
             } else {
                 const sides = toSides(d.type);
                 const result = rollValues[d.id]!;
                 childRolls.push({
                     sides,
-                    result: sides === 10 && result === 0 ? 10 : result,
+                    results: [sides === 10 && result === 0 ? 10 : result],
                 });
             }
         }
@@ -123,10 +129,9 @@
         if (childRolls.length === 0) {
             return 0;
         }
-        return {
-            mode: 'ADD',
-            rolls: childRolls,
-        };
+        return childRolls.length > 1
+            ? createBinaryRollChain(BinaryRollMode.ADD, childRolls)
+            : childRolls[0];
     }
 
     function consumeMetadata(connId: string, metadata: Metadata)

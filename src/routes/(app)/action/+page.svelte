@@ -2,7 +2,7 @@
     import { PUBLIC_DEV_MODE, PUBLIC_EXT_ID } from "$env/static/public";
     import { getObr, getPlayersStore } from "$lib/obr-host.svelte";
     import RollPrinter from "$lib/roll-printer.svelte";
-    import { getRollResult, isCriticalRoll, parseRolls, type Roll } from "$lib/rolls";
+    import { getRollResult, isCriticalRoll, ParseRollError, parseRollSpec, reroll, type Roll } from "$lib/rolls";
     import { isRollMsg, type RollMsgData } from "$lib/types";
     import { onMount } from "svelte";
 
@@ -17,9 +17,20 @@
     const players = getPlayersStore();
     let rollHistory = [] as RollHistoryItem[];
     let historyElement: HTMLElement;
+    let rollInput = '';
 
     async function submitRoll() {
-        const rolls = parseRolls('');
+        let rolls;
+        try {
+            rolls = parseRollSpec(rollInput || '1d20').map(r => reroll(r));
+        } catch (e) {
+            if (e instanceof ParseRollError) {
+                await obr.notification.show(e.message, 'ERROR');
+                return;
+            }
+            throw e;
+        }
+        if (!rolls.length) return;
         obr.broadcast.sendMessage(
             PUBLIC_EXT_ID,
             {
@@ -28,24 +39,12 @@
                 rollId: crypto.randomUUID(),
                 playerId: obr.player.id,
                 when: Date.now(),
-
             } satisfies RollMsgData,
             { destination: 'ALL' },
         );
-        // const rollQuery = new URLSearchParams({ rolls: JSON.stringify(rolls) }).toString();
-        // obr.popover.open({
-        //     id: `${PUBLIC_EXT_ID}/roll/${obr.player}?${rollQuery}`,
-        //     url: '/roll-popover',
-        //     width: 256,
-        //     height: 256,
-        //     anchorOrigin: { horizontal: 'RIGHT', vertical: 'BOTTOM' },
-        // });
     }
 
     async function runMsg() {
-        // const md = await obr.player.getMetadata();
-        // const lastId = Number((md['rodeo.owlbear.dice/roll'] as any)?.id ?? '0');
-        // console.log(lastId);
         const id = '4';
         obr.player.setMetadata({
             "rodeo.owlbear.dice/roll": {
@@ -102,7 +101,7 @@
             PUBLIC_EXT_ID,
             {
                 topic: 'roll',
-                rolls: [ { mode: 'ADD', rolls: [{ sides: 20, result: 20 }] }],
+                rolls: [ { sides: 20, results: [20] } ],
                 rollId: crypto.randomUUID(),
                 playerId: obr.player.id,
                 when: Date.now(),
@@ -114,7 +113,7 @@
 
     onMount(() => {
         obr.broadcast.onMessage(PUBLIC_EXT_ID, async msg => {
-            if (!isRollMsg(msg)) return;
+            if (!isRollMsg(msg) || !historyElement) return;
             rollHistory.push({
                 playerId: msg.data.playerId,
                 rolls: msg.data.rolls,
@@ -164,9 +163,19 @@
                     display: none;
                 }
 
+                > .formulas {
+                    > .formula:not(:last-child)::after {
+                        content: ', ';
+                    }
+                }
+
                 > .results {
                     > .result {
                         font-weight: bold;
+                    }
+
+                    > .result:not(:last-child)::after {
+                        content: ', ';
                     }
                 }
             }
@@ -212,7 +221,9 @@
             </span>
             <span class="formulas">
                 {#each item.rolls as roll, idx (idx)}
-                <RollPrinter {roll} />
+                <span class="formula">
+                    <RollPrinter {roll} />
+                </span>
                 {/each}
             </span>
             <span class="results">
@@ -225,7 +236,7 @@
         {/each}
     </div>
     <form class="roll-input" on:submit|preventDefault={() => submitRoll()}>
-        <input tabindex="0" type="text" autofocus />
+        <input tabindex="0" type="text" autofocus bind:value={rollInput} placeholder="1d20" />
         <input tabindex="0" type="submit" />
     </form>
 </div>

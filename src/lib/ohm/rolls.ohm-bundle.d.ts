@@ -12,7 +12,7 @@ import {
 } from 'ohm-js';
 
 export interface RollsActionDict<T> extends BaseActionDict<T> {
-  Rolls?: (this: NonterminalNode, arg0: IterationNode) => T;
+  Rolls?: (this: NonterminalNode, arg0: IterationNode, arg1: IterationNode, arg2: IterationNode) => T;
   Roll?: (this: NonterminalNode, arg0: NonterminalNode) => T;
   MinMaxRoll?: (this: NonterminalNode, arg0: NonterminalNode, arg1: TerminalNode, arg2: NonterminalNode, arg3: TerminalNode) => T;
   ArithmeticRoll?: (this: NonterminalNode, arg0: NonterminalNode, arg1: NonterminalNode, arg2: NonterminalNode) => T;

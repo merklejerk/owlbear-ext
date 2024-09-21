@@ -1,6 +1,6 @@
 Rolls {
 	Rolls
-   		= (NonemptyListOf<Roll, ","> | NonemptyListOf<Roll, " ">)+
+        = Roll? (#("," | " ") Roll)*
     
     Roll
     	= ArithmeticRoll | MinMaxRoll | advantageRoll | SignedRoll | diceRoll | LiteralRoll
@@ -24,8 +24,8 @@ Rolls {
     	= "-" | "+"
         
     diceRoll
-    	= #(integer? caseInsensitive<"d"> integer)
+    	= integer? caseInsensitive<"d"> integer
     
     advantageRoll
-    	= diceRoll #(caseInsensitive<"a"> | caseInsensitive<"d">)
+    	= diceRoll (caseInsensitive<"a"> | caseInsensitive<"d">)
 }

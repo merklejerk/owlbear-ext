@@ -1,16 +1,20 @@
 <script lang="ts">
     import {
-        isCombination,
-        isDice,
+    BinaryRollMode,
+        isBinaryRoll,
         isDiceGroup,
         simplifyRoll,
         type Roll,
-        type RollCombination,
-        type RollCombinationMode,
+        type BinaryRoll,
+        isMinMaxRoll,
+        type DiceGroup,
+        isArithmeticRoll,
     } from "./rolls";
 
+    type Sign = '+' | '-';
+
     export let roll: Roll;
-    export let parent: RollCombination | undefined = undefined;
+    export let sign: Sign | undefined = undefined;
     let simplifiedRoll: Roll;
 
     $: simplifiedRoll = simplifyRoll(roll);
@@ -21,63 +25,60 @@
         results: number[][];
     }
 
-    function tryCoalesceToAdvantage(roll: RollCombination): AdvantageRoll | undefined {
-        if (roll.rolls.length !== 2) return;
-        if (!['MAX', 'MIN'].includes(roll.mode)) return;
-        if (roll.rolls.every(r => isDice(r))) {
-            const sides = roll.rolls[0].sides;
-            if (!roll.rolls.every(r => r.sides === sides)) return;
+    function tryCoalesceToAdvantage(roll: BinaryRoll): AdvantageRoll | undefined {
+        if (!isMinMaxRoll(roll)) return;
+        if (roll.rolls.every(r => isDiceGroup(r))) {
+            const subrolls = roll.rolls as [DiceGroup, DiceGroup];
+            if (subrolls[0].sides !== subrolls[1].sides &&
+                subrolls[0].results.length !== subrolls[1].results.length) return;
             return {
-                kind: roll.mode === 'MIN' ? 'DISADVANTAGE' : 'ADVANTAGE',
-                sides,
-                results: [roll.rolls.map(r => r.result)],
-            };
-        } else if (roll.rolls.every(r => isDiceGroup(r))) {
-            const sides = roll.rolls[0].sides;
-            if (!roll.rolls.every(r => r.sides === sides)) return;
-            return {
-                kind: roll.mode === 'MIN' ? 'DISADVANTAGE' : 'ADVANTAGE',
-                sides,
-                results: roll.rolls.map(r => r.results),
-            };
+                kind: roll.mode === BinaryRollMode.MIN
+                    ? 'DISADVANTAGE'
+                    : 'ADVANTAGE',
+                sides: subrolls[0].sides,
+                results: subrolls.map(r => r.results),
+            } satisfies AdvantageRoll;
         }
     }
 
-    function computeComboOperator(roll: RollCombination, subrollIdx: number): string {
-        const currentMode = roll.mode;
-        if ((!parent && subrollIdx === 0) || ['MIN', 'MAX'].includes(currentMode)) return '';
-        const nextSubRoll = roll.rolls[subrollIdx] ;
-        const op = currentMode === 'ADD' ? '+' : '-';
-        if (isCombination(nextSubRoll)
-            && ['ADD', 'SUB'].includes(nextSubRoll.mode)
-            && nextSubRoll.rolls.length !== 0)
-        {
-            if (op !== computeComboOperator(nextSubRoll, 0)) {
-                return '-';
-            }
-            return '+';
-        } else if (typeof nextSubRoll === 'number') {
-            if (nextSubRoll < 0) {
-               if (op === '+')  {
-                   return '-';
-               } else {
-                    return '+';
-               }
-            }
+    function getNestedArithmeticSign(roll: Roll, sign: Sign): Sign {
+        const negated = sign === '-';
+        if (isArithmeticRoll(roll)) {
+            return negated
+                ? (roll.mode === 'ADD' ? '-' : '+')
+                : (roll.mode === 'ADD' ? '+' : '-');
         }
-        return op;
+        return negated ? '-' : '+';
     }
 </script>
 
 <style lang="scss">
-    .formula.child::before {
-        content: var(--combo-operator, '');
-    }
-    
     .formula {
         display: contents;
 
-        > .combo {
+        // &.negative {
+        //     .spec::before, .literal::before {
+        //         content: '- ';
+        //     }
+        // }
+
+        // &.negative.first {
+        //     .spec::before,  .literal::before {
+        //         content: '-';
+        //     }
+        // }
+        
+        // &:not(.negative):not(.first) {
+        //     .spec::before,  .literal::before {
+        //         content: '+ ';
+        //     }
+        // }
+
+        .operator:has(+ .literal) {
+            display: none;
+        }
+
+        > .binary {
             &.min {
                 &::before {
                     content: 'min(';
@@ -129,54 +130,73 @@
     }
 </style>
 
-<span class="formula" class:child={!!parent}>
-    {#if isCombination(simplifiedRoll)}
-    {@const adv = tryCoalesceToAdvantage(simplifiedRoll)}
-    {#if !adv}
-    <span
-        class="combo"
-        class:root={!parent}
-        class:add={simplifiedRoll.mode === 'ADD'}
-        class:sub={simplifiedRoll.mode === 'SUB'}
-        class:min={simplifiedRoll.mode === 'MIN'}
-        class:max={simplifiedRoll.mode === 'MAX'}
-    >
-        {#each simplifiedRoll.rolls as subroll, si}
-        <span class="roll" style={`--combo-operator: ' ${computeComboOperator(simplifiedRoll, si)} '`}><!--
-            --><svelte:self parent={simplifiedRoll} roll={subroll} /><!--
-        --></span>
-        {/each}
+{#if true}
+{@const r = simplifiedRoll}
+<span class="formula">
+    {#if isBinaryRoll(r)}
+    {@const adv = tryCoalesceToAdvantage(r)}
+    {#if adv}
+    <span class="advantage">
+        {#if sign}<span class="operator">{sign}</span>{/if}
+        <span class="spec">
+            {adv.results[0].length}<!--
+        -->d{adv.sides}<!--
+        -->{#if adv.kind === 'ADVANTAGE'}a{:else if adv.kind === 'DISADVANTAGE'}d{/if}
+        </span>
+        <span class="dice-results">
+            {#each adv.results as group}
+            <span class="dice-result-group">
+                {#each group as result}
+                <span class="dice-result">{result}</span>
+                {/each}
+            </span>
+            {/each}
+        </span>
     </span>
     {:else}
-    <span class="spec">
-        {adv.results.length}d{adv.sides}<!--
-        -->{#if adv.kind === 'ADVANTAGE'}a{:else if adv.kind === 'DISADVANTAGE'}d{/if}
+    <span
+        class="binary"
+        class:add={r.mode === 'ADD'}
+        class:sub={r.mode === 'SUB'}
+        class:min={r.mode === 'MIN'}
+        class:max={r.mode === 'MAX'}
+    >
+        {#if sign}<span class="operator">{sign}</span>{/if}
+        <span class="roll">
+            <svelte:self
+                roll={r.rolls[0]} />
+        </span>
+        <span>
+        {#if isArithmeticRoll(roll)}
+            <svelte:self
+                roll={r.rolls[1]}
+                sign={getNestedArithmeticSign(r, sign ?? '+')} />
+        {:else}
+            <svelte:self
+                roll={r.rolls[1]} />
+            {/if}
+        </span>
     </span>
-    <span class="dice-results"><!--
-        -->{#each adv.results as group}<!--
-        --><span class="dice-result-group"><!--
-            -->{#each group as result}<!--
-            --><span class="dice-result">{result}</span><!--
-            -->{/each}<!--
-        --></span><!--
-        -->{/each}<!--
-    --></span>
     {/if}
-    {:else if isDice(simplifiedRoll)}
-    <span class="spec">1d{simplifiedRoll.sides}</span>
-    <span class="dice-results">
-        <span class="dice-result">{simplifiedRoll.result}</span>
+    {:else if isDiceGroup(r)}
+    <span class="dice">
+        {#if sign}<span class="operator">{sign}</span>{/if}
+        <span class="spec">{r.results.length}d{r.sides}</span>
+        <span class="dice-results">
+            {#each r.results as res}
+            <span class="dice-result">{res}</span>
+            {/each}
+        </span>
     </span>
-    {:else if isDiceGroup(simplifiedRoll)}
-    <span class="spec">{simplifiedRoll.results.length}d{simplifiedRoll.sides}</span>
-    <span class="dice-results"><!--
-        -->{#each simplifiedRoll.results as r}<!--
-        --><span class="dice-result">{r}</span><!--
-        -->{/each}<!--
-    --></span>
     {:else}
     <span class="literal">
-        {Math.abs(simplifiedRoll)}
+        {#if sign === '+'}
+        <span class="operator">{r >= 0 ? '+' : '-'}</span>
+        {:else if sign === '-'}
+        <span class="operator">{r >= 0 ? '-' : '+'}</span>
+        {/if}
+        {Math.abs(r)}
     </span>
     {/if}
 </span>
+{/if}

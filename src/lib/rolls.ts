@@ -1,30 +1,34 @@
 import ohm from '$lib/ohm/rolls.ohm-bundle';
 
-export interface Dice {
-    sides: number;
-    result: number;
-}
-
 export interface DiceGroup {
     sides: number;
     results: number[];
 }
 
-export type RollCombinationMode = 'MIN' | 'MAX' | 'ADD' | 'SUB';
+export enum BinaryRollMode {
+    MIN = 'MIN',
+    MAX = 'MAX',
+    ADD = 'ADD',
+    SUB = 'SUB',
+};
 
-export interface RollCombination {
-    mode: RollCombinationMode;
-    rolls: Array<Roll>;
+export interface BinaryRoll {
+    mode: BinaryRollMode;
+    rolls: [Roll, Roll];
 }
 
-export type Roll = Dice | DiceGroup | RollCombination | number;
+export type Roll = DiceGroup | BinaryRoll | number;
 
-export function isCombination(r: Roll): r is RollCombination {
+export function isBinaryRoll(r: Roll): r is BinaryRoll {
     return typeof(r) === 'object' && !!(r as any).mode;
 }
 
-export function isDice(r: Roll): r is Dice {
-    return typeof(r) === 'object' && typeof (r as any).result === 'number';
+export function isArithmeticRoll(r: Roll): r is BinaryRoll & { mode: BinaryRollMode.ADD | BinaryRollMode.SUB } {
+    return isBinaryRoll(r) && ['ADD', 'SUB'].includes(r.mode);
+}
+
+export function isMinMaxRoll(r: Roll): r is BinaryRoll & { mode: BinaryRollMode.MIN | BinaryRollMode.MAX } {
+    return isBinaryRoll(r) && ['MIN', 'MAX'].includes(r.mode);
 }
 
 export function isDiceGroup(r: Roll): r is DiceGroup {
@@ -32,32 +36,26 @@ export function isDiceGroup(r: Roll): r is DiceGroup {
 }
 
 export function isEmptyRoll(roll: Roll): boolean {
-    if (isCombination(roll)) {
-        return roll.rolls.length === 0 || roll.rolls.every(r => isEmptyRoll(r));
+    if (isBinaryRoll(roll)) {
+        return roll.rolls.every(r => isEmptyRoll(r));
     }
-    if (isDice(roll)) {
-        return false;
+    if (isDiceGroup(roll)) {
+        return roll.results.length === 0;
     }
     return roll === 0;
 }
 
-export function getRollResult(roll: Roll): number {
-    if (isCombination(roll)) {
+export function getRollResult(roll: Roll, parent?: BinaryRoll): number {
+    if (isBinaryRoll(roll)) {
         if (roll.mode === 'ADD') {
-            return roll.rolls.reduce((a: number, r) => a + getRollResult(r), 0);
+            return getRollResult(roll.rolls[0]) + getRollResult(roll.rolls[1]);
         } else if (roll.mode === 'SUB') {
-            return roll.rolls.reduce((a: number, r) => a - getRollResult(r), 0);
-        } else if (roll.rolls.length !== 0) {
-            return roll.rolls.slice(1).reduce(
-                roll.mode === 'MAX'
-                    ? (a: number, r) => Math.max(a, getRollResult(r))
-                    : (a: number, r) => Math.min(a, getRollResult(r)),
-                getRollResult(roll.rolls[0]),
-            );
+            return getRollResult(roll.rolls[0]) - getRollResult(roll.rolls[1]);
+        } else if (roll.mode === 'MIN') {
+            return Math.min(getRollResult(roll.rolls[0]), getRollResult(roll.rolls[1]));
+        } else {
+            return Math.max(getRollResult(roll.rolls[0]), getRollResult(roll.rolls[1]));
         }
-        return 0;
-    } else if (isDice(roll)) {
-        return roll.result;
     } else if (isDiceGroup(roll)) {
         return roll.results.reduce((a, v) => v + a, 0);
     }
@@ -65,14 +63,12 @@ export function getRollResult(roll: Roll): number {
 }
 
 export function reroll<T extends Roll>(roll: T): T {
-    if (isCombination(roll)) {
+    if (isBinaryRoll(roll)) {
         for (const r of roll.rolls) {
-            if (typeof(r) !== 'number') {
-                reroll(r);
-            }
+            reroll(r);
         }
-    } else if (isDice(roll)) {
-        roll.result = rollDice(roll.sides);
+    } else if (isDiceGroup(roll)) {
+        roll.results = roll.results.map(r => rollDice(roll.sides));
     }
     return roll;
 }
@@ -81,53 +77,43 @@ export function rollDice(sides: number): number {
     return Math.ceil(Math.random() * sides);
 }
 
-export function parseRolls(text: string): Roll[] {
-    return [
-        {
-            mode: 'ADD',
-            rolls: [20, 8].map(sides => ({ sides, result: rollDice(sides )})),
-        },
-    ];
-}
-
-export function toRollFormula(roll: Roll): string {
-    return '1d20';
-}
-
 export function isCriticalRoll(roll: Roll): boolean {
-    if (isCombination(roll)) {
-        if (roll.rolls.length === 0) {
-            return false;
-        }
+    if (isMinMaxRoll(roll)) {
         if (roll.mode === 'MIN') {
-            return roll.rolls.every(r => typeof(r) !== 'number' && isCriticalRoll(r));
+            return roll.rolls.every(r => isCriticalRoll(r));
         }
         return roll.rolls.some(r => isCriticalRoll(r));
     }
-    if (isDice(roll)) {
-        return roll.sides === 20 && roll.result === 20;
+    if (isDiceGroup(roll)) {
+        return roll.sides === 20 && roll.results.some(r => r === 20);
     }
     return false;
 }
 
 export function simplifyRoll(roll: Roll): Roll {
-    if (isCombination(roll)) {
-        if (roll.rolls.length === 0) {
-            return 0;
-        }
-        roll = mergeSubRolls({
+    if (isBinaryRoll(roll)) {
+        roll = {
             ...roll,
-            rolls: roll.rolls.map(r => simplifyRoll(r)),
-        });
-        if (roll.rolls.length === 1 && roll.mode !== 'SUB') {
-            return roll.rolls[0];
-        }
-    } else if (isDice(roll)) {
-        if (roll.sides === 1) {
-            return 1;
-        }
-        if (roll.sides === 0) {
-            return roll.result;
+            rolls: roll.rolls.map(r => simplifyRoll(r)) as [Roll, Roll],
+        };
+        if (roll.mode === 'ADD') {
+            if (roll.rolls.every(r => isDiceGroup(r))) {
+                const groups = roll.rolls as DiceGroup[];
+                if (groups[0].sides === groups[1].sides) {
+                    return {
+                        sides: groups[0].sides,
+                        results: groups.map(r => r.results).flat(1),
+                    };
+                }
+            } else if (roll.rolls.every(r => typeof r === 'number')) {
+                const literals = roll.rolls as number[];
+                return literals[0] + literals[1];
+            }
+        } else if (roll.mode === 'SUB') {
+            if (roll.rolls.every(r => typeof r === 'number')) {
+                const literals = roll.rolls as number[];
+                return literals[0] - literals[1];
+            }
         }
     } else if (isDiceGroup(roll)) {
         if (roll.sides === 1) {
@@ -136,54 +122,130 @@ export function simplifyRoll(roll: Roll): Roll {
         if (roll.sides === 0) {
             return roll.results.reduce((a, v) => a + v, 0);
         }
-        if (roll.results.length === 1) {
-            return { sides: roll.sides, result: roll.results[0] };
+    }
+    return roll;
+}
+
+export class ParseRollError extends Error {
+    public constructor(err: string) {
+        super(err);
+    }
+}
+
+export function createBinaryRollChain(
+    mode: BinaryRollMode,
+    subrolls: Roll[],
+): BinaryRoll {
+    if (subrolls.length < 2) {
+        throw new Error(`>=2 rolls needed to create binary roll.`);
+    }
+    return {
+        mode,
+        rolls: [
+            subrolls[0],
+            subrolls.length > 2
+                ? createBinaryRollChain(mode, subrolls.slice(1))
+                : subrolls[1]
+        ],
+    };
+}
+
+export function normalizeArithmetic(
+    roll: Roll,
+    parentMode: BinaryRollMode = BinaryRollMode.ADD,
+): Roll {
+    if (isArithmeticRoll(roll)) {
+        roll.rolls = roll.rolls.map(
+            r => normalizeArithmetic(r, roll.mode),
+        ) as [Roll,Roll];
+        if (parentMode === BinaryRollMode.SUB) {
+            roll.mode = roll.mode === BinaryRollMode.ADD
+                ? BinaryRollMode.SUB
+                : BinaryRollMode.ADD;
         }
     }
     return roll;
 }
 
-function mergeSubRolls(roll: RollCombination): RollCombination {
-    if (roll.rolls.length === 0) return roll;
-    if (!['ADD', 'SUB'].includes(roll.mode)) return roll;
-    const merged = { ...roll, rolls: roll.rolls.slice(0, 1) } as RollCombination;
-    for (const r of roll.rolls.slice(1)) {
-        let prev = merged.rolls[merged.rolls.length - 1];
-        if ((isDice(r) || isDiceGroup(r)) && (isDice(prev) || isDiceGroup(prev))) {
-            if (r.sides === prev.sides) {
-                if (isDice(prev)) {
-                    merged.rolls[merged.rolls.length - 1] = prev = {
-                        sides: prev.sides,
-                        results: [prev.result]
-                    };
-                }
-                prev.results.push(...(isDice(r) ? [r.result] : r.results));
-                continue;
-            }
-        } else if (typeof r === 'number') {
-            if (typeof prev === 'number') {
-                merged.rolls[merged.rolls.length - 1] = prev =
-                    roll.mode === 'ADD' ? prev + r : prev - r;
-            }
-        }
-        merged.rolls.push(r);
-    }
-    return merged;
-}
-
-function parseRollSpec(spec: string): Roll[] {
+export function parseRollSpec(spec: string): Roll[] {
     const sem = ohm.createSemantics();
-    sem.addOperation('parse(',
+    sem.addAttribute('integer',
         {
             integer(digits): number {
                 return Number(digits.sourceString);
             },
-            LiteralRoll(value): Roll {
-                return value;
-            },
-            diceRoll(nDice?: number, _: string, nCount, )
         },
     );
-    sem.extendOperation('LiteralRoll(d)', actions);
-
+    sem.addAttribute('operator',
+        {
+            operator(s): string {
+                return s.sourceString;
+            },
+        },
+    );
+    sem.addAttribute('roll',
+        {
+            LiteralRoll(integer): Roll {
+                return integer.integer;
+            },
+            diceRoll(nDice, _d, nSides): DiceGroup {
+                const s = nSides.integer;
+                const c = nDice.children?.[0]?.integer ?? 1;
+                return { sides: s, results: [...new Array(c)].fill(0) };
+            },
+            SignedRoll(op, roll): BinaryRoll {
+                if (op.operator === '+') {
+                    return roll.roll;
+                }
+                return { mode: BinaryRollMode.SUB, rolls: [ 0, roll.roll ] };
+            },
+            advantageRoll(diceRoll, aOrD): BinaryRoll {
+                return {
+                    mode: aOrD.sourceString === 'a' ? BinaryRollMode.MAX : BinaryRollMode.MIN,
+                    rolls: [
+                        { ...diceRoll.roll },
+                        { ...diceRoll.roll },
+                    ],
+                };
+            },
+            MinMaxRoll(minOrMax, _lParen, rolls, _rParen): Roll {
+                if (rolls.children.length === 0) {
+                    return 0;
+                }
+                if (rolls.children.length === 1) {
+                    return rolls.children[0].roll;
+                }
+                return createBinaryRollChain(
+                    minOrMax.sourceString.toLocaleLowerCase() === 'min'
+                        ? BinaryRollMode.MIN : BinaryRollMode.MAX,
+                    rolls.rolls,
+                );
+            },
+            ArithmeticRoll(roll1, op, roll2): BinaryRoll {
+                return {
+                    mode: op.operator === '+' ? BinaryRollMode.ADD : BinaryRollMode.SUB,
+                    rolls: [ roll1.roll, roll2.roll ],
+                };
+            },
+        },
+    );
+    sem.addAttribute('rolls',
+        {
+            Rolls(roll1, _seps, nextRolls): Roll[] {
+                return [
+                    roll1.children?.[0]?.roll,
+                    ...nextRolls.children.map(ch => ch.roll),
+                ].filter(v => !!v);
+            },
+        },
+    );
+    const r = ohm.match(spec, 'Rolls');
+    if (!r.succeeded()) {
+        throw new ParseRollError(r.shortMessage ?? 'Failed to parse roll spec.');
+    }
+    // return sem(r).rolls;
+    let rolls = sem(r).rolls as Roll[];
+    rolls = rolls.map(r => simplifyRoll(r));
+    rolls = rolls.map(r => normalizeArithmetic(r));
+    return rolls;
 }
