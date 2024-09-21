@@ -193,12 +193,47 @@
 
         .roll-input {
             display: flex;
-            gap: 1ex;
-            justify-content: space-between;
+            gap: 1.5ex;
+            align-items: center;
 
             > input[type="text"] {
                 flex: 1 0;
             }
+        }
+
+        
+        input[type="submit"] {
+            background: var(--theme-secondary-color);
+            mask-image: url('/dice.svg');
+            border: 0;
+            background-repeat: no-repeat;
+            background-position: center;
+            position: relative;
+            width: 2em;
+            height: 2em;
+            cursor: pointer;
+
+            &:hover, &:focus {
+                // transform: scale(1.2);
+                animation: 0.5s linear infinite spin;
+            }
+        }
+
+        input[type="text"] {
+            border-radius: 0.75ex;
+            padding: 1ex;
+            border: 1px solid var(--theme-primary-color);
+            background: transparent;;
+            color: var(--theme-text-color);
+        }
+    }
+
+    @keyframes spin {
+        0% {
+            transform: rotate(0);
+        }
+        100% {
+            transform: rotate(360deg);
         }
     }
 
@@ -240,7 +275,7 @@
         {/each}
     </div>
     <form class="roll-input" action="#" on:submit|preventDefault={() => submitRoll()}>
-        <input tabindex="0" type="text" autofocus bind:value={rollInput} placeholder="1d20" />
-        <input tabindex="0" type="submit" />
+        <input tabindex="0" type="text" bind:value={rollInput} placeholder="1d20" />
+        <input tabindex="0" type="submit" title="Roll!" value="" />
     </form>
 </div>

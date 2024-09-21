@@ -78,7 +78,7 @@ export function rollDice(sides: number): number {
 }
 
 export function isCriticalRoll(roll: Roll): boolean {
-    if (isMinMaxRoll(roll)) {
+    if (isBinaryRoll(roll)) {
         if (roll.mode === 'MIN') {
             return roll.rolls.every(r => isCriticalRoll(r));
         }

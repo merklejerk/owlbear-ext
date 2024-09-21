@@ -92,6 +92,7 @@
             '--theme-secondary-color': theme.secondary.main,
             '--theme-mode': theme.mode,
             '--theme-bg': theme.background.paper,
+            '--theme-bg-x': theme.background.default,
         };
         $themeMode = theme.mode;
     }
