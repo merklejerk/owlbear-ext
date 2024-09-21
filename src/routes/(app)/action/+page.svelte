@@ -143,7 +143,7 @@
         .roll-history {
             flex: 1 0;
             width: 100%;
-            overflow: auto;
+            overflow: hidden auto;
             margin: 0.5em 0;
     
             > .item {
@@ -185,6 +185,10 @@
                     color: orangered;
                 }
             }
+
+            > .item:not(:last-child) {
+                margin-bottom: 0.25em;
+            }
         }
 
         .roll-input {
@@ -199,7 +203,7 @@
     }
 
     .container:not(.dev) {
-        .roll-input, .test-controls {
+        .test-controls {
             display: none;
         }
     }
