@@ -89,6 +89,11 @@
             obr.popover.setHeight(POPOVER_ID, 0),
         ]);
     }
+
+    async function wipe() {
+        rollHistory = {};
+        hide();
+    }
 </script>
 
 <style lang="scss">
@@ -180,7 +185,7 @@
     }
 </style>
 
-<div class="component" style={Object.entries(animationVars).map(([k, v]) => `${k}: ${v}`).join(';')}>
+<div class="component" style={Object.entries(animationVars).map(([k, v]) => `${k}: ${v}`).join(';')} on:click={() => wipe()}>
     <div class="history">
         {#each Object.values(rollHistory) as entry (entry.rollId)}
         <div class="entry">
