@@ -144,12 +144,12 @@
         -->{#if adv.kind === 'ADVANTAGE'}a{:else if adv.kind === 'DISADVANTAGE'}d{/if}
         </span>
         <span class="dice-results">
-            {#each adv.results as group}
-            <span class="dice-result-group">
-                {#each group as result}
-                <span class="dice-result">{result}</span>
-                {/each}
-            </span>
+            {#each adv.results as group}<!--
+            --><span class="dice-result-group"><!--
+                -->{#each group as result}<!--
+                --><span class="dice-result">{result}</span><!--
+                -->{/each}<!--
+            --></span>
             {/each}
         </span>
     </span>

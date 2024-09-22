@@ -25,7 +25,7 @@
 
     const obr = getObr();
     const players = getPlayersStore();
-    export let displayDelay = 6000;
+    export let displayDelay = 7000;
     let rollHistory: RollInstanceById = {};
     let pruneTimer: any = null;
     let animationVars = {} as Record<string, string>;
@@ -130,7 +130,7 @@
                     cubic-bezier(.19,-0.42,.89,1.15) 1 forwards appear2;
                 animation-duration: var(--appear-duration), var(--disappear-duration);
                 animation-delay: 0.05s, var(--disappear-delay);
-                background-color: color-mix(in hsl, var(--theme-bg), transparent 50%);
+                background-color: color-mix(in hsl, var(--theme-bg), transparent 30%);
                 border-radius: 0.5em;
                 padding: 0.5ex;
                

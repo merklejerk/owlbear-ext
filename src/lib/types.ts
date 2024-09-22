@@ -9,6 +9,12 @@ export interface RollMsgData {
     imported?: boolean;
 }
 
+export interface AnnounceMsgData {
+    topic: 'announce';
+    playerId: string;
+    msg: string;
+}
+
 export type InternalMsgData<T extends any> = { topic: string; } & T;
 
 export interface BroadcastMsg {
@@ -26,4 +32,8 @@ export function isInternalMsg<T = unknown>(msg: BroadcastMsg): msg is InternalMs
 
 export function isRollMsg(msg: BroadcastMsg | InternalMsg): msg is InternalMsg<RollMsgData> {
     return (msg.data as any)?.topic === 'roll';
+}
+
+export function isAnnounceMsg(msg: BroadcastMsg | InternalMsg): msg is InternalMsg<AnnounceMsgData> {
+    return (msg.data as any)?.topic === 'announce';
 }

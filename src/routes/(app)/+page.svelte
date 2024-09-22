@@ -5,6 +5,7 @@
     import { getObr } from "$lib/obr-host.svelte";
     import { onMount } from "svelte";
     import { POPOVER_ID as ROLL_POPOVER_ID } from "./roll-popover/+page.svelte";
+    import AnnounceWatcher from "$lib/announce-watcher.svelte";
 
     const obr = getObr();
 
@@ -24,4 +25,5 @@
 
 <!-- background_url page. NOT optional, though the docs say otherwise. -->
  <ObrDiceExtHook />
+ <AnnounceWatcher />
  <CritWatcher popupDelay={5000} />
