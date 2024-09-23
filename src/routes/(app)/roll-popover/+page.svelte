@@ -22,13 +22,17 @@
     import { onDestroy, onMount } from "svelte";
 
     const DISAPPEAR_ANIM_FRAC = 0.1;
+    const MIN_HEIGHT = 132;
+    const MAX_HEIGHT = 512;
 
     const obr = getObr();
     const players = getPlayersStore();
     export let displayDelay = 7000;
     let rollHistory: RollInstanceById = {};
-    let pruneTimer: any = null;
+    let tickTimer: any = null;
     let animationVars = {} as Record<string, string>;
+    let historyElement: HTMLDivElement;
+    let componentElement: HTMLDivElement;
 
     $: {
         const disappearDelay = displayDelay * (1 - DISAPPEAR_ANIM_FRAC);
@@ -57,7 +61,10 @@
     }
 
     onMount(() => {
-        pruneTimer = setInterval(() => updateRollHistory(), 100);
+        tickTimer = setInterval(() => {
+            updateRollHistory();
+            fitWindow();
+        }, 100);
         obr.broadcast.onMessage(PUBLIC_EXT_ID, (e: BroadcastMsg) => {
             if (!isRollMsg(e)) return;
             const { data } = e;
@@ -73,21 +80,36 @@
     });
 
     onDestroy(() => {
-        if (pruneTimer) {
-            clearInterval(pruneTimer);
+        if (tickTimer) {
+            clearInterval(tickTimer);
         }
     });
 
+    async function fitWindow() {
+       if (window.window.innerWidth)  {
+            if (historyElement.scrollHeight < MAX_HEIGHT) {
+                await resize(
+                    window.window.innerWidth,
+                    Math.max(MIN_HEIGHT, historyElement.scrollHeight + 10),
+                );
+            }
+       }
+    }
+
     async function show() {
-        obr.popover.setWidth(POPOVER_ID, 384);
-        obr.popover.setHeight(POPOVER_ID, 132);
+       resize(384, MIN_HEIGHT);
     }
 
     async function hide() {
-        return Promise.all([
-            obr.popover.setWidth(POPOVER_ID, 0),
-            obr.popover.setHeight(POPOVER_ID, 0),
+        return resize(0, 0);
+    }
+
+    async function resize(w: number, h: number): Promise<void> {
+        await Promise.all([
+            obr.popover.setWidth(POPOVER_ID, w),
+            obr.popover.setHeight(POPOVER_ID, h),
         ]);
+        componentElement.scrollTop = componentElement.scrollHeight;
     }
 
     async function wipe() {
@@ -105,9 +127,7 @@
 
     .component {
         position: absolute;
-        left: 0;
-        right: 0; 
-        bottom: 0;
+        inset: 0;
         overflow: hidden;
         padding: 1ex;
         font-size: 1.33em;
@@ -188,8 +208,9 @@
 <div class="component"
     style={Object.entries(animationVars).map(([k, v]) => `${k}: ${v}`).join(';')}
     on:click={() => wipe()}
+    bind:this={componentElement}
     >
-    <div class="history">
+    <div class="history" bind:this={historyElement}>
         {#each Object.values(rollHistory) as entry (entry.rollId)}
         <div class="entry">
             <span class="lead">
