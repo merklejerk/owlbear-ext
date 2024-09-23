@@ -1,5 +1,6 @@
 <script lang="ts">
-    import {
+    import { result } from "underscore";
+import {
     BinaryRollMode,
         isBinaryRoll,
         isDiceGroup,
@@ -55,24 +56,6 @@
 <style lang="scss">
     .formula {
         display: contents;
-
-        // &.negative {
-        //     .spec::before, .literal::before {
-        //         content: '- ';
-        //     }
-        // }
-
-        // &.negative.first {
-        //     .spec::before,  .literal::before {
-        //         content: '-';
-        //     }
-        // }
-        
-        // &:not(.negative):not(.first) {
-        //     .spec::before,  .literal::before {
-        //         content: '+ ';
-        //     }
-        // }
 
         .operator:has(+ .literal) {
             display: none;
@@ -139,7 +122,7 @@
     <span class="advantage">
         {#if sign}<span class="operator">{sign}</span>{/if}
         <span class="spec">
-            {adv.results[0].length}<!--
+            {adv.results[0].length === 1 ? '' : adv.results[0].length}<!--
         -->d{adv.sides}<!--
         -->{#if adv.kind === 'ADVANTAGE'}a{:else if adv.kind === 'DISADVANTAGE'}d{/if}
         </span>
@@ -181,7 +164,7 @@
     {:else if isDiceGroup(r)}
     <span class="dice">
         {#if sign}<span class="operator">{sign}</span>{/if}
-        <span class="spec">{r.results.length}d{r.sides}</span>
+        <span class="spec">{r.results.length === 1 ? '' : r.results.length}d{r.sides}</span>
         <span class="dice-results">
             {#each r.results as res}
             <span class="dice-result">{res}</span>

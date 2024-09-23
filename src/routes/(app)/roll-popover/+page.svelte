@@ -156,7 +156,7 @@
             }
 
             .critical {
-                color: red;
+                color: orangered;
             }
         }
     }
@@ -185,7 +185,10 @@
     }
 </style>
 
-<div class="component" style={Object.entries(animationVars).map(([k, v]) => `${k}: ${v}`).join(';')} on:click={() => wipe()}>
+<div class="component"
+    style={Object.entries(animationVars).map(([k, v]) => `${k}: ${v}`).join(';')}
+    on:click={() => wipe()}
+    >
     <div class="history">
         {#each Object.values(rollHistory) as entry (entry.rollId)}
         <div class="entry">
