@@ -16,7 +16,7 @@
 <script lang="ts">
     import { PUBLIC_EXT_ID } from "$env/static/public";
     import { getObr, getPlayersStore } from "$lib/obr-host.svelte";
-    import RollPrinter from "$lib/roll-printer.svelte";
+    import RollFormula from "$lib/roll-formula.svelte";
     import { getRollResult, isCriticalRoll, type Roll } from "$lib/rolls";
     import { isRollMsg, type BroadcastMsg } from "$lib/types";
     import { onDestroy, onMount } from "svelte";
@@ -86,14 +86,16 @@
     });
 
     async function fitWindow() {
-       if (window.window.innerWidth)  {
+        if (Object.keys(rollHistory).length === 0) {
+            await resize(0, 0);
+        } else if (window.window.innerWidth)  {
             if (historyElement.scrollHeight < MAX_HEIGHT) {
                 await resize(
                     window.window.innerWidth,
                     Math.max(MIN_HEIGHT, historyElement.scrollHeight + 10),
                 );
             }
-       }
+        }
     }
 
     async function show() {
@@ -105,6 +107,8 @@
     }
 
     async function resize(w: number, h: number): Promise<void> {
+        if (h === window.window.innerHeight) return;
+        if (h < window.window.innerHeight && Object.keys(rollHistory).length) return;
         await Promise.all([
             obr.popover.setWidth(POPOVER_ID, w),
             obr.popover.setHeight(POPOVER_ID, h),
@@ -132,6 +136,9 @@
         padding: 1ex;
         font-size: 1.33em;
         font-family: sans-serif;
+        display: flex;
+        flex-direction: column;
+        justify-content: end;
 
         > .history {
             width: 100%;
@@ -168,6 +175,17 @@
 
                 .total {
                     font-weight: bold;
+                    opacity: 0;
+                    animation: 0.25s forwards 1 ease-out 0.45s total-appear;
+
+                    @keyframes total-appear {
+                        0% {
+                            opacity: 0;
+                        }
+                        100% {
+                            opacity: 1;
+                        }
+                    }
                 }
 
                 .formulas {
@@ -220,7 +238,7 @@
             <span class="body" class:critical={entry.rolls.some(r => isCriticalRoll(r))}>
                 <span class="formulas">
                     {#each entry.rolls as roll}
-                    <RollPrinter {roll} />
+                    <RollFormula {roll} />
                     {/each}
                     =
                 </span>

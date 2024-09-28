@@ -1,7 +1,7 @@
 <script lang="ts">
     import { PUBLIC_DEV_MODE, PUBLIC_EXT_ID } from "$env/static/public";
     import { getObr, getPlayersStore } from "$lib/obr-host.svelte";
-    import RollPrinter from "$lib/roll-printer.svelte";
+    import RollFormula from "$lib/roll-formula.svelte";
     import { getRollResult, isCriticalRoll, ParseRollError, parseRollSpec, reroll, type Roll } from "$lib/rolls";
     import { isRollMsg, type AnnounceMsgData, type RollMsgData } from "$lib/types";
     import { onMount } from "svelte";
@@ -195,6 +195,7 @@
             width: 100%;
             overflow: hidden auto;
             margin: 0.5em 0;
+            user-select: none;
     
             > .item {
                 position: relative;
@@ -231,6 +232,7 @@
                     }
 
                     > .formulas {
+                        text-indent: 0;
                         > .formula:not(:last-child)::after {
                             content: ', ';
                         }
@@ -239,6 +241,17 @@
                     > .results {
                         > .result {
                             font-weight: bold;
+                            opacity: 0;
+                            animation: 0.5s forwards 1 ease-out 0.5s result-appear;
+
+                            @keyframes result-appear {
+                                0% {
+                                    opacity: 0;
+                                }
+                                100% {
+                                    opacity: 1;
+                                }
+                            }
                         }
 
                         > .result:not(:last-child)::after {
@@ -363,7 +376,7 @@
                 <span class="formulas">
                     {#each item.rolls as roll, idx (idx)}
                     <span class="formula">
-                        <RollPrinter {roll} />
+                        <RollFormula {roll} />
                     </span>
                     {/each}
                 </span>

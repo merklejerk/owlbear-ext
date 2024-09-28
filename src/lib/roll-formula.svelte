@@ -11,11 +11,14 @@ import {
         type DiceGroup,
         isArithmeticRoll,
     } from "./rolls";
+    import RollReveal from "./roll-reveal.svelte";
 
     type Sign = '+' | '-';
 
     export let roll: Roll;
     export let sign: Sign | undefined = undefined;
+    export let animated = true;
+    export let idx = 0;
     let simplifiedRoll: Roll;
 
     $: simplifiedRoll = simplifyRoll(roll);
@@ -130,7 +133,7 @@ import {
             {#each adv.results as group}<!--
             --><span class="dice-result-group"><!--
                 -->{#each group as result}<!--
-                --><span class="dice-result">{result}</span><!--
+                --><span class="dice-result"><RollReveal value={result} {animated} /></span><!--
                 -->{/each}<!--
             --></span>
             {/each}
@@ -146,8 +149,7 @@ import {
     >
         {#if sign}<span class="operator">{sign}</span>{/if}
         <span class="roll">
-            <svelte:self
-                roll={r.rolls[0]} />
+            <svelte:self roll={r.rolls[0]} />
         </span>
         <span>
         {#if isArithmeticRoll(roll)}
@@ -155,8 +157,7 @@ import {
                 roll={r.rolls[1]}
                 sign={getNestedArithmeticSign(r, sign ?? '+')} />
         {:else}
-            <svelte:self
-                roll={r.rolls[1]} />
+            <svelte:self roll={r.rolls[1]} />
             {/if}
         </span>
     </span>
@@ -167,7 +168,7 @@ import {
         <span class="spec">{r.results.length === 1 ? '' : r.results.length}d{r.sides}</span>
         <span class="dice-results">
             {#each r.results as res}
-            <span class="dice-result">{res}</span>
+            <span class="dice-result"><RollReveal value={res} {animated} /></span>
             {/each}
         </span>
     </span>
