@@ -156,6 +156,7 @@
         // All dice values must be set.
         if (diceIds.some(id => typeof rollValues[id] !== 'number')) return;
         const maxDiceId = diceIds.reduce((a, v) => Math.max(a, v));
+        console.log(connId, maxDiceId, minDiceId);
         minDiceIdForPlayer[connId] = Math.max(
             maxDiceId + 1,
             minDiceIdForPlayer[connId] ?? 0,

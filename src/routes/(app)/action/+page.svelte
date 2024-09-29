@@ -364,7 +364,7 @@
         <button on:click={() => runCritTest()}>crit!</button>
     </div>
     <div class="roll-history" bind:this={historyElement}>
-        {#each rollHistory as item, idx (idx)}
+        {#each rollHistory as item, i (i)}
         <div class="item" class:critical={item.rolls.some(r => isCriticalRoll(r))}>
             <span class="content">
                 <span class="timestamp">
@@ -374,7 +374,7 @@
                     <span class="name">{$players[item.playerId]?.name ?? '?'}</span>:
                 </span>
                 <span class="formulas">
-                    {#each item.rolls as roll, idx (idx)}
+                    {#each item.rolls as roll, j (j)}
                     <span class="formula">
                         <RollFormula {roll} />
                     </span>
@@ -382,7 +382,7 @@
                 </span>
                 <span class="results">
                     =
-                    {#each item.rolls as roll, idx (idx)}
+                    {#each item.rolls as roll, j (j)}
                     <span class="result">{getRollResult(roll)}</span>
                     {/each}
                 </span>
