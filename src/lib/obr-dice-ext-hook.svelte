@@ -7,7 +7,7 @@
     import { BinaryRollMode, createBinaryRollChain, isEmptyRoll, simplifyRoll, type Roll } from "./rolls";
 
     const obr = getObr();
-    const minDiceIdForPlayer = {} as { [playerId: string]: number };
+    const pendingRollIds = {} as { [id: string]: boolean };
 
     interface OfficialDiceRollMetadataDice {
         id: string;
@@ -136,7 +136,7 @@
 
     function consumeMetadata(connId: string, metadata: Metadata)
         : {
-            maxDiceId: number;
+            rollId: string;
             roll: OfficialDiceRollMetadata;
             rollValues: OfficialDiceRollValuesMetadata
         } | undefined
@@ -150,28 +150,24 @@
         if (!roll || !rollValues) return;
         const diceIds = getDiceIds(roll.dice);
         if (diceIds.length === 0) return;
-        // At least one dice must be new.
-        const minDiceId = minDiceIdForPlayer[connId] ?? 0;
-        if (!diceIds.some(id => id >= minDiceId)) return;
-        // All dice values must be set.
-        if (diceIds.some(id => typeof rollValues[id] !== 'number')) return;
         const maxDiceId = diceIds.reduce((a, v) => Math.max(a, v));
-        console.log(connId, maxDiceId, minDiceId);
-        minDiceIdForPlayer[connId] = Math.max(
-            maxDiceId + 1,
-            minDiceIdForPlayer[connId] ?? 0,
-        );
-        return {
-            maxDiceId,
-            roll,
-            rollValues,
-        };
+        const rollId = `${connId}-${maxDiceId}`;
+        // If any dice values are unset, mark it as pending.
+        // All dice values must be set.
+        if (diceIds.some(id => typeof rollValues[id] !== 'number')) {
+            pendingRollIds[rollId] = true;
+            return;
+        }
+        // Roll must be previously marked pending.
+        if (!pendingRollIds[rollId]) return;
+        delete pendingRollIds[rollId];
+        return { rollId, roll, rollValues };
     }
 
     function handlePlayerChange(player: Player): void {
         const r = consumeMetadata(player.connectionId, player.metadata);
         if (!r) return;
-        const rollId = `${player.connectionId}-${r.maxDiceId}`;
+        const rollId = `${player.connectionId}-${r.rollId}`;
 
         // Translate roll history.
         const translated = simplifyRoll(translateRoll(r.roll, r.rollValues));

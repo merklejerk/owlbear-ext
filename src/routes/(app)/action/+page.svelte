@@ -364,7 +364,7 @@
         <button on:click={() => runCritTest()}>crit!</button>
     </div>
     <div class="roll-history" bind:this={historyElement}>
-        {#each rollHistory as item, i (i)}
+        {#each rollHistory as item (item.rollId)}
         <div class="item" class:critical={item.rolls.some(r => isCriticalRoll(r))}>
             <span class="content">
                 <span class="timestamp">
