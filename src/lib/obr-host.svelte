@@ -81,7 +81,25 @@
         obr.theme.onChange(updateTheme);
         obr.player.onChange(player => updatePlayers([player]));
         obr.party.onChange(players => updatePlayers(players));
+        initDevTools();
         ready = true;
+    }
+
+    function initDevTools() {
+        (window as any).__owl = {
+            async getPlayers() {
+                console.log(await obr.party.getPlayers());
+            },
+            async getRoomMetadata() {
+                console.log(await obr.room.getMetadata());
+            },
+            async getSceneMetadata() {
+                console.log(await obr.scene.getMetadata());
+            },
+            async getSceneItems() {
+                console.log(await obr.scene.items.getItems());
+            }
+        };
     }
 
     function updateTheme(theme: Theme): void {
