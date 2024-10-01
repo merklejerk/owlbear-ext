@@ -340,6 +340,12 @@
                 border-color: invert(var(--theme-primary-color));
                 outline: none;
             }
+
+            &::placeholder {
+                color: color-mix(in hsl, var(--theme-text-color), transparent 40%);
+                opacity: 1;
+                font-style: italic;
+            }
         }
     }
 
@@ -401,7 +407,7 @@
             tabindex="0"
             type="text"
             bind:value={rawInput}
-            placeholder="d20"
+            placeholder="d20 (🢁 or 🢃 for history)"
             on:keydown={inputKeyDownHandler} />
         <div class="submit-container" class:validated={validateInput(rawInput)}>
             <input tabindex="0" type="submit" title="Roll!" value="" />
