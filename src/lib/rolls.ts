@@ -249,3 +249,19 @@ export function parseRollSpec(spec: string): Roll[] {
     rolls = rolls.map(r => normalizeArithmetic(r));
     return rolls;
 }
+
+export function cloneRoll(roll: Roll): Roll {
+    if (isBinaryRoll(roll)) {
+        return {
+            ...roll,
+            rolls: roll.rolls.map(r => cloneRoll(r)) as [Roll, Roll],
+        };
+    }
+    if (isDiceGroup(roll)) {
+        return {
+            ...roll,
+            results: roll.results,
+        };
+    }
+    return roll;
+}

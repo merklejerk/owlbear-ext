@@ -2,7 +2,7 @@
     import { PUBLIC_DEV_MODE, PUBLIC_EXT_ID } from "$env/static/public";
     import { getObr, getPlayersStore } from "$lib/obr-host.svelte";
     import RollFormula from "$lib/roll-formula.svelte";
-    import { getRollResult, isCriticalRoll, ParseRollError, parseRollSpec, reroll, type Roll } from "$lib/rolls";
+    import { cloneRoll, getRollResult, isCriticalRoll, ParseRollError, parseRollSpec, reroll, type Roll } from "$lib/rolls";
     import { isRollMsg, type AnnounceMsgData, type RollMsgData } from "$lib/types";
     import { onMount } from "svelte";
 
@@ -154,7 +154,7 @@
     }
 
     async function rerollHistoryItem(item: RollHistoryItem) {
-        doRolls(item.rolls);
+        doRolls(item.rolls.map(r => reroll(cloneRoll(r))));
         setTimeout(scrollToEnd, 100);
     }
 

@@ -88,16 +88,24 @@
     function initDevTools() {
         (window as any).__owl = {
             async getPlayers() {
-                console.log(await obr.party.getPlayers());
+                const r = await obr.party.getPlayers();
+                console.log(r);
+                return r;
             },
             async getRoomMetadata() {
-                console.log(await obr.room.getMetadata());
+                const r = await obr.room.getMetadata();
+                console.log(r);
+                return r;
             },
             async getSceneMetadata() {
-                console.log(await obr.scene.getMetadata());
+                const r = await obr.scene.getMetadata();
+                console.log(r);
+                return r;
             },
             async getSceneItems() {
-                console.log(await obr.scene.items.getItems());
+                const r = await obr.scene.items.getItems();
+                console.log(r);
+                return r;
             }
         };
     }
