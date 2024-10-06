@@ -407,7 +407,7 @@
             }
 
             input[type="submit"] {
-                background: var(--theme-secondary-color);
+                background: var(--theme-primary-color);
                 mask-image: url('/dice.svg');
                 border: 0;
                 mask-repeat: no-repeat;

@@ -50,7 +50,7 @@
                     font-size: 1.033em;
                     font-weight: bold;
                     animation: 0.5s alternate infinite ease-in active-glow;
-                    color: color-mix(in hsl, currentColor, yellow 66%);
+                    color: color-mix(in hsl, currentColor, var(--theme-primary-color) 66%);
                     // background: linear-gradient(
                     //     90deg,
                     //     color-mix(in hsl, var(--theme-text-color), transparent 100%) 50%,
