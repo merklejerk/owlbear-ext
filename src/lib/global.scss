@@ -1,0 +1,18 @@
+@supports (scrollbar-color: auto) {
+    :global(*) {
+        scrollbar-width: thin;
+        scrollbar-color: 
+            color-mix(in hsl, var(--theme-text-color), transparent 66%)
+            color-mix(in hsl, var(--theme-bg), transparent 66%);
+    }
+}
+
+@supports selector(::-webkit-scrollbar) {
+    :global(*::-webkit-scrollbar) {
+        background-color: (in hsl, var(--theme-bg), transparent 66%);
+    }
+    
+    :global(*::-webkit-scrollbar-thumb) {
+        background-color: color-mix(in hsl, var(--theme-text-color), transparent 66%);
+    }
+}

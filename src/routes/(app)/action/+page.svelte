@@ -1,9 +1,9 @@
 <script lang="ts">
     import { PUBLIC_DEV_MODE, PUBLIC_EXT_ID } from "$env/static/public";
-    import InitiativeGraph from "$lib/initiative-graph.svelte";
     import { getObr, getPlayersStore } from "$lib/obr-host.svelte";
     import RollFormula from "$lib/roll-formula.svelte";
     import { cloneRoll, getRollResult, isCriticalRoll, ParseRollError, parseRollSpec, reroll, type Roll } from "$lib/rolls";
+    import SimpleInitiativeGraph from "$lib/simple-initiative-graph.svelte";
     import { isRollMsg, type AnnounceMsgData, type RollMsgData } from "$lib/types";
     import type { Item } from "@owlbear-rodeo/sdk";
     import { onMount } from "svelte";
@@ -239,15 +239,15 @@
 
 
     $: {
-        console.log(clientWidth, window.window.innerWidth);
         if (clientWidth && clientWidth !== window.window.innerWidth) {
-            console.log('set width')
             obr.action.setWidth(clientWidth);
         }
     }
 </script>
 
 <style lang="scss">
+    @use "../../../lib/global.scss";
+
     .component {
         position: fixed;
         inset: 0;
@@ -257,13 +257,25 @@
         .grid {
             padding: 1ex;
             display: grid;
-            grid-template: 'test-controls test-controls' auto
+            grid-template:  'test-controls test-controls' auto
+                            'rolls-header initiative-header' auto
                             'roll-history initiative' 1fr
                             'roll-input initiative' auto / 42ex fit-content(100%);
         }
 
         .test-controls {
             grid-area: test-controls;
+        }
+
+        .header {
+            text-align: center;
+            font-weight: bold;
+            opacity: 0.5;
+            margin-bottom: 0.25em;
+        }
+
+        .rolls-header {
+            grid-area: rolls-header;
         }
 
         .roll-history {
@@ -366,7 +378,12 @@
 
                 > .interaction {
                     display: flex;
-                    background-color: color-mix(in hsl, var(--theme-bg), transparent 70%);
+                    background: linear-gradient(
+                        90deg,
+                        color-mix(in hsl, var(--theme-bg), transparent 100%) 0%,
+                        color-mix(in hsl, var(--theme-bg), transparent 50%) 80%,
+                        var(--theme-bg) 100%,
+                    );
                 } 
             }
         }
@@ -385,7 +402,7 @@
             .submit-container.validated {
                 position: relative;
                 z-index: 1;
-                transform-origin: 47% 50%;
+                transform-origin: 45% 50%;
                 animation: 0.85s linear infinite spin;
             }
 
@@ -424,16 +441,36 @@
             }
         }
 
+        .initiative-header {
+            grid-area: initiative-header;
+        }
+
         .initiative {
             grid-area: initiative;
-            width: 12ex;
+            display: flex;
+            flex-direction: row;
+            align-items: center;
+
+            .separator {
+                background-color: color-mix(in hsl, var(--theme-text-color), transparent 85%);
+                width: 0.33rex;
+                height: 50%;
+                border-radius: 100%;
+                margin: 1rex;
+            }
+
+            .graph {
+                height: 100%;
+                width: 20ex;
+                overflow: hidden;
+            }
         }
 
-        .initiative.empty {
-            display: none;
+        .grid.no-initiative {
+            .initiative-header, .initiative {
+                display: none;
+            }
         }
-
-
     }
 
     @keyframes spin {
@@ -453,10 +490,11 @@
 </style>
 
 <div class="component" class:dev={!!PUBLIC_DEV_MODE}>
-    <div class="grid" bind:offsetWidth={clientWidth}>
+    <div class="grid" bind:offsetWidth={clientWidth} class:no-initiative={Object.keys(initiativesById).length === 0}>
         <div class="test-controls">
             <button on:click={() => runCritTest()}>crit!</button>
         </div>
+        <div class="rolls-header header">Rolls</div>
         <div class="roll-history" bind:this={historyElement}>
             {#each rollHistory as item (item.rollId)}
             <div class="item" class:critical={item.rolls.some(r => isCriticalRoll(r))}>
@@ -501,17 +539,21 @@
                 <input tabindex="0" type="submit" title="Roll!" value="" />
             </div>
         </form>
-        <div class="initiative" class:empty={Object.keys(initiativesById).length === 0}>
-            <InitiativeGraph
-                entries={Object
-                    .entries(initiativesById)
-                    .map(([k, v]) => ({
-                        id: k,
-                        initiative: v.initiative,
-                        name: v.name,
-                    }))}
-                activeId={Object.keys(initiativesById).find(id => initiativesById[id].active)}
-                />
+        <div class="initiative-header header">Turns</div>
+        <div class="initiative">
+            <div class="separator" />
+            <div class="graph">
+                <SimpleInitiativeGraph
+                    entries={Object
+                        .entries(initiativesById)
+                        .map(([k, v]) => ({
+                            id: k,
+                            initiative: v.initiative,
+                            name: v.name,
+                        }))}
+                    activeId={Object.keys(initiativesById).find(id => initiativesById[id].active)}
+                    />
+            </div>
         </div>
     </div>
 </div>
