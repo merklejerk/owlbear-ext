@@ -25,18 +25,6 @@
 
     type InputAction = RollAction | AnnounceAction;
 
-    interface Initiative {
-        initiative: number;
-        name: string;
-        active: boolean;
-    }
-
-    interface TrackerMetadata {
-        count?: string;
-        active: boolean;
-    }
-
-    const TRACKER_METADATA_ID = 'rodeo.owlbear.initiative-tracker/metadata';
     const INPUT_HISTORY_SIZE = 16;
     const obr = getObr();
     const players = getPlayersStore();
@@ -44,8 +32,8 @@
     let historyElement: HTMLElement;
     let inputHistory: string[] = [''];
     let rawInput = '';
-    let initiativesById = {} as { [id: string]: Initiative };
     let clientWidth = 0;
+    let isInitiativeGraphEmpty = true;
 
     function isRollAction(action: InputAction): action is RollAction {
         return !!(action as any).rolls;
@@ -178,31 +166,6 @@
         historyElement.scrollTop = historyElement.scrollHeight;
     }
 
-    function processSceneItems(items: Item[]) {
-        const trackedItems = items.filter(item => item.metadata[TRACKER_METADATA_ID]);
-        for (const id in initiativesById) {
-            if (!trackedItems.find(item => item.id === id)) {
-                delete initiativesById[id];
-            }
-        }
-        const additions = [] as Item[];
-        for (const item of trackedItems) {
-            if (!initiativesById[item.id]) {
-                additions.push(item);
-            }
-        }
-        initiativesById = Object.assign({},
-            initiativesById,
-            ...additions.map(item => ({
-                [item.id]: {
-                    initiative: Number((item.metadata[TRACKER_METADATA_ID] as TrackerMetadata)?.count) ?? 0,
-                    active: !!(item.metadata[TRACKER_METADATA_ID] as TrackerMetadata).active,
-                    name: (item as any).text?.plainText || item.name,
-                } satisfies Initiative,
-            })),
-        );
-    }
-
     onMount(() => {
         obr.broadcast.onMessage(PUBLIC_EXT_ID, async msg => {
             if (!isRollMsg(msg) || !historyElement) return;
@@ -219,22 +182,6 @@
                 setTimeout(scrollToEnd, 10);
             }
         });
-
-        (async () => {
-            const hook = async () => {
-                processSceneItems(await obr.scene.items.getItems());
-                obr.scene.items.onChange(items => processSceneItems(items));
-            };
-            if (await obr.scene.isReady()) {
-                hook();
-            } else {
-                obr.scene.onReadyChange(rdy => {
-                    if (rdy) {
-                        hook();
-                    }
-                });
-            }
-        })();
     });
 
 
@@ -490,7 +437,7 @@
 </style>
 
 <div class="component" class:dev={!!PUBLIC_DEV_MODE}>
-    <div class="grid" bind:offsetWidth={clientWidth} class:no-initiative={Object.keys(initiativesById).length === 0}>
+    <div class="grid" bind:offsetWidth={clientWidth} class:no-initiative={isInitiativeGraphEmpty}>
         <div class="test-controls">
             <button on:click={() => runCritTest()}>crit!</button>
         </div>
@@ -543,16 +490,7 @@
         <div class="initiative">
             <div class="separator" />
             <div class="graph">
-                <SimpleInitiativeGraph
-                    entries={Object
-                        .entries(initiativesById)
-                        .map(([k, v]) => ({
-                            id: k,
-                            initiative: v.initiative,
-                            name: v.name,
-                        }))}
-                    activeId={Object.keys(initiativesById).find(id => initiativesById[id].active)}
-                    />
+                <SimpleInitiativeGraph bind:empty={isInitiativeGraphEmpty} />
             </div>
         </div>
     </div>
