@@ -71,7 +71,7 @@
             sortedIds[currentIdx],
             sortedIds[wrapIndex(currentIdx + 1, sortedIds.length)],
         ];
-        obr.scene.items.updateItems(
+        await obr.scene.items.updateItems(
             it => neededIds.includes(it.id),
             items => {
                 for (const it of items) {
@@ -79,6 +79,9 @@
                 }
             },
         );
+        if (currentIdx === sortedIds.length - 1) {
+            ++roundCount;
+        }
     }
     
     async function goToPrevTurn() {
@@ -88,7 +91,7 @@
             sortedIds[currentIdx],
             sortedIds[wrapIndex(currentIdx - 1, sortedIds.length)],
         ];
-        obr.scene.items.updateItems(
+        await obr.scene.items.updateItems(
             it => neededIds.includes(it.id),
             items => {
                 for (const it of items) {
@@ -96,6 +99,9 @@
                 }
             },
         );
+        if (currentIdx === 0 && roundCount > 0) {
+            --roundCount;
+        }
     }
 </script>
 
