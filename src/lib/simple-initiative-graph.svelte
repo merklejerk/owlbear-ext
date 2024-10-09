@@ -6,6 +6,9 @@
     import { getObr } from "./obr-host.svelte";
     import type { Item } from "@owlbear-rodeo/sdk";
     import { wrapIndex } from "./util";
+    import { PUBLIC_EXT_ID } from "$env/static/public";
+    import IconButton from "./icon-button.svelte";
+    import Icon from "./icon.svelte";
 
     interface Initiative {
         initiative: number;
@@ -19,25 +22,36 @@
     }
     
     const TRACKER_METADATA_ID = 'rodeo.owlbear.initiative-tracker/metadata';
+    const ROUND_METADATA_ID = `${PUBLIC_EXT_ID}/round`;
     const obr = getObr();
     let initiativesById = {} as { [id: string]: Initiative };
     let sortedIds = [] as string[];
     export let empty = true;
     let roundCount = 0;
-
-    $: {
-        sortedIds = Object
-            .keys(initiativesById)
-            .sort((a, b) => initiativesById[b].initiative - initiativesById[a].initiative);
-    }
     
-    $: empty = sortedIds.length === 0;
+    $: {
+        empty = sortedIds.length === 0;
+        if (empty) roundCount = 0;
+    }
+
+    $: (async (roundCount: number) => {
+        if (await obr.scene.isReady()) {
+            const metadata = await obr.scene.getMetadata();
+            if (metadata[ROUND_METADATA_ID] !== roundCount) {
+                await obr.scene.setMetadata({
+                    [ROUND_METADATA_ID]: roundCount,
+                });
+            }
+        }
+    })(roundCount);
 
     onMount(() => {
         (async () => {
             const hook = async () => {
-                processSceneItems(await obr.scene.items.getItems());
+                obr.scene.getMetadata().then(processSceneMetadata);
+                obr.scene.items.getItems().then(processSceneItems);
                 obr.scene.items.onChange(items => processSceneItems(items));
+                obr.scene.onMetadataChange(processSceneMetadata);
             };
             if (await obr.scene.isReady()) {
                 hook();
@@ -51,8 +65,18 @@
         })();
     });
 
+    function wrapInitiativeIndex(idx: number): number {
+        return wrapIndex(idx, sortedIds.length);
+    }
+
+    function processSceneMetadata(metadata: any) {
+        let roundCount_ = (metadata[ROUND_METADATA_ID] as number) ?? 0;
+        if (roundCount !== roundCount_) roundCount = roundCount_;
+    }
+
     function processSceneItems(items: Item[]) {
         const trackedItems = items.filter(item => item.metadata[TRACKER_METADATA_ID]);
+        const oldActiveIdx = findActiveIdx();
         initiativesById = Object.assign({},
             ...trackedItems.map(item => ({
                 [item.id]: {
@@ -62,56 +86,66 @@
                 } satisfies Initiative,
             })),
         );
+        sortedIds = Object
+            .keys(initiativesById)
+            .sort((a, b) => initiativesById[b].initiative - initiativesById[a].initiative);
+        if (findActiveIdx() === -1 && sortedIds.length) {
+            updateActive(oldActiveIdx, oldActiveIdx);
+        }
     }
 
-    async function goToNextTurn() {
-        const currentIdx = sortedIds.findIndex(id => initiativesById[id].active);
-        if (currentIdx === -1) return;
-        const neededIds = [
-            sortedIds[currentIdx],
-            sortedIds[wrapIndex(currentIdx + 1, sortedIds.length)],
-        ];
+    async function updateActive(oldIdx: number, newIdx: number): Promise<void> {
+        oldIdx = wrapInitiativeIndex(oldIdx);
+        newIdx = wrapInitiativeIndex(newIdx);
+        const neededIds = [ sortedIds[oldIdx], sortedIds[newIdx] ];
         await obr.scene.items.updateItems(
             it => neededIds.includes(it.id),
             items => {
                 for (const it of items) {
-                    it.metadata[TRACKER_METADATA_ID].active = it.id !== sortedIds[currentIdx];
+                    it.metadata[TRACKER_METADATA_ID].active = it.id === sortedIds[newIdx];
                 }
             },
         );
+    }
+
+    function findActiveIdx(): number {
+        return sortedIds.findIndex(id => initiativesById[id].active);
+    }
+
+    async function goToNextTurn() {
+        if (sortedIds.length === 0) return;
+        const currentIdx = wrapInitiativeIndex(findActiveIdx());
+        updateActive(currentIdx, currentIdx + 1);
         if (currentIdx === sortedIds.length - 1) {
             ++roundCount;
         }
     }
     
     async function goToPrevTurn() {
-        const currentIdx = sortedIds.findIndex(id => initiativesById[id].active);
-        if (currentIdx === -1) return;
-        const neededIds = [
-            sortedIds[currentIdx],
-            sortedIds[wrapIndex(currentIdx - 1, sortedIds.length)],
-        ];
-        await obr.scene.items.updateItems(
-            it => neededIds.includes(it.id),
-            items => {
-                for (const it of items) {
-                    it.metadata[TRACKER_METADATA_ID].active = it.id !== sortedIds[currentIdx];
-                }
-            },
-        );
+        if (sortedIds.length === 0) return;
+        const currentIdx = wrapInitiativeIndex(findActiveIdx());
+        updateActive(currentIdx, currentIdx - 1);
         if (currentIdx === 0 && roundCount > 0) {
             --roundCount;
         }
+    }
+
+    async function viewItem(id: string): Promise<void> {
+        const bounds = await obr.scene.items.getItemBounds([id]);
+        if (bounds.width === 0 || bounds.height === 0) return;
+        await obr.viewport.animateToBounds(bounds);
     }
 </script>
 
 <style lang="scss">
 
     .component {
+        --select-color: color-mix(in hsl, var(--theme-primary-color), transparent 12.5%);
         width: 100%;
         height: 100%;
         display: flex;
         flex-direction: column;
+        gap: 0.5em;
 
         .turns {
             flex: 1 0;
@@ -119,14 +153,47 @@
             .entry {
                 overflow: hidden;
                 max-width: 100%;
-                text-overflow: ellipsis;
-                text-wrap: nowrap;
                 padding: 0.25em 0;
-    
+                position: relative;
+                
+                > .content {
+                    text-overflow: ellipsis;
+                    text-wrap: nowrap;
+                }
+
                 &.active {
+                    > .content {
+                        font-weight: bold;
+                        animation: 0.5s alternate infinite ease-in active-glow;
+                        color: color-mix(in hsl, currentColor, var(--theme-primary-color) 66%);
+                    }
+                }
+                
+                > .overlay {
+                    position: absolute;
+                    inset: 0;
+                    background: var(--select-color);
+                    display: none;
+                    gap: 1.5ex;
+                    align-items: center;
+                    justify-content: space-between;
                     font-weight: bold;
-                    animation: 0.5s alternate infinite ease-in active-glow;
-                    color: color-mix(in hsl, currentColor, var(--theme-primary-color) 66%);
+                    padding: 0 1ex;
+
+                    > .ordinal {
+                        font-weight: bold;
+                    }
+
+                    > .controls {
+                        display: flex;
+                        gap: 1.5ex;
+                    }
+                }
+
+                &:hover {
+                    > .overlay {
+                        display: flex;
+                    }
                 }
 
                 @keyframes active-glow {
@@ -150,7 +217,38 @@
         .controls {
             display: flex;
             justify-content: space-between;
+            padding: 0 0.5ex;
 
+            > .round-count {
+                border: 1px solid color-mix(in hsl, var(--theme-text-color), transparent 75%);
+                border-radius: 0.5ex;
+                position: relative;
+                --icon-size: 1em;
+
+                > .content {
+                    padding: 0.3ex;
+                }
+
+                > .overlay {
+                    position: absolute;
+                    inset: 0;
+                    display: none;
+                    align-items: center;
+                    justify-content: center;
+                    background: var(--select-color);
+                }
+
+                &:hover {
+                    > .overlay {
+                        display: flex;
+                    }
+                }
+            }
+
+            > .turn-controls {
+                display: flex;
+                gap: 2ex;
+            }
         }
     }
 
@@ -170,13 +268,42 @@
             class:active={ini.active}
             title={`Initiative: ${ini.initiative}`}
             >
-            {ini.name}
+            <span class="content">{ini.name}</span>
+            <div class="overlay">
+                <div class="ordinal">{ini.initiative}</div>
+                <div class="controls">
+                    <IconButton title="View" iconPath="eye.svg" on:click={() => viewItem(id)} />
+                    <IconButton title="Edit" iconPath="pencil.svg" />
+                </div>
+            </div>
         </div>
         {/each}
     </div>
     <div class="controls">
-        <div class="rount-count">Round: {roundCount}</div>
-        <button on:click={() => goToPrevTurn()}>Last</button>
-        <button on:click={() => goToNextTurn()}>Next</button>
+        <div class="round-count">
+            <div class="content">
+                <Icon title="Round" iconPath={"checkered-flag.svg"}/> {roundCount + 1}
+            </div>
+            <div class="overlay">
+                <IconButton
+                    on:click={() => roundCount = 0}
+                    title="Reset" iconPath="undo.svg"
+                    noAnimate
+                    fillContainer
+                    />
+            </div>
+        </div>
+        <div class="turn-controls">
+            <IconButton
+                on:click={() => goToPrevTurn()}
+                title="Previous player"
+                iconPath="backwards.svg"
+                />
+            <IconButton
+                on:click={() => goToNextTurn()}
+                title="Next player"
+                iconPath="forwards.svg"
+                />
+        </div>
     </div>
 </div>

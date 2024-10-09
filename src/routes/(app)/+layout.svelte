@@ -3,7 +3,6 @@
 </script>
 
 <style lang="scss">
-    @import "../../lib/theme.scss";
 </style>
 
 <ObrHost><slot /></ObrHost>    

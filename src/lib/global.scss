@@ -16,3 +16,7 @@
         background-color: color-mix(in hsl, var(--theme-text-color), transparent 66%);
     }
 }
+
+:root {
+    --icon-size: 3.5ex;
+}
