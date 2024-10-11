@@ -14,6 +14,8 @@
         initiative: number;
         name: string;
         active: boolean;
+        editContent?: string;
+        editElem?: HTMLElement;
     }
 
     interface TrackerMetadata {
@@ -28,6 +30,7 @@
     let sortedIds = [] as string[];
     export let empty = true;
     let roundCount = 0;
+    let isEditing = false;
     
     $: {
         empty = sortedIds.length === 0;
@@ -44,6 +47,8 @@
             }
         }
     })(roundCount);
+
+    $: isEditing = Object.values(initiativesById).some(ini => ini.editContent !== undefined);
 
     onMount(() => {
         (async () => {
@@ -74,6 +79,19 @@
         if (roundCount !== roundCount_) roundCount = roundCount_;
     }
 
+    function populateIds() {
+        sortedIds = Object
+            .keys(initiativesById)
+            .sort((a, b) => {
+                const a_ = initiativesById[a];
+                const b_ = initiativesById[b];
+                if (a_.initiative === b_.initiative) {
+                    return a.localeCompare(b);
+                }
+                return b_.initiative - a_.initiative
+            });
+    }
+
     function processSceneItems(items: Item[]) {
         const trackedItems = items.filter(item => item.metadata[TRACKER_METADATA_ID]);
         const oldActiveIdx = findActiveIdx();
@@ -86,9 +104,7 @@
                 } satisfies Initiative,
             })),
         );
-        sortedIds = Object
-            .keys(initiativesById)
-            .sort((a, b) => initiativesById[b].initiative - initiativesById[a].initiative);
+        populateIds();
         if (findActiveIdx() === -1 && sortedIds.length) {
             updateActive(oldActiveIdx, oldActiveIdx);
         }
@@ -135,6 +151,40 @@
         if (bounds.width === 0 || bounds.height === 0) return;
         await obr.viewport.animateToBounds(bounds);
     }
+   
+    function beginEditingInitiative(id: string) {
+        const item = initiativesById[id]; 
+        initiativesById[id].editContent = item.initiative.toString();
+    }
+
+    function cancelEditingInitiative(id: string) {
+        initiativesById[id].editContent = undefined;
+    }
+
+    function initializeEditor(node: HTMLInputElement) {
+        node.focus();
+        node.select();
+    }
+
+    function submitInitiative(id: string) {
+        const ini = initiativesById[id];
+        const n = Number(ini.editContent || '0');
+        if (!isNaN(n)) {
+            initiativesById[id].initiative = n;
+            cancelEditingInitiative(id);
+            // populateIds();
+            obr.scene.items.updateItems(
+                it => it.id === id,
+                ([it]) => {
+                    const metadata = it.metadata?.[TRACKER_METADATA_ID];
+                    if (metadata && Number(metadata.count) !== n) {
+                        metadata.count = `${n}`;
+                    }
+                },
+            );
+            return;
+        }
+    }
 </script>
 
 <style lang="scss">
@@ -148,15 +198,17 @@
         gap: 0.5em;
 
         .turns {
+            overflow: auto;
             flex: 1 0;
 
             .entry {
-                overflow: hidden;
-                max-width: 100%;
                 padding: 0.25em 0;
                 position: relative;
                 
                 > .content {
+                    overflow: hidden;
+                    display: block;
+                    width: 100%;
                     text-overflow: ellipsis;
                     text-wrap: nowrap;
                 }
@@ -179,9 +231,33 @@
                     justify-content: space-between;
                     font-weight: bold;
                     padding: 0 1ex;
+                    cursor: text;
 
-                    > .ordinal {
+                    > button.ordinal {
+                        display: block;
+                        background: none;
+                        border: none;
                         font-weight: bold;
+                        color: currentColor;
+                        flex: 1 0;
+                        text-align: left;
+                        padding: 0;
+                    }
+                   
+                    form > input.ordinal {
+                        display: block;
+                        background: none; 
+                        border: none;
+                        padding: 0;
+                        margin: 0;
+                        width: 100%;
+                        outline: none;
+                        -moz-appearance: textfield;
+
+                        &::-webkit-outer-spin-button, &::-webkit-inner-spin-button {
+                            -webkit-appearance: none;
+                            margin: 0;
+                        }
                     }
 
                     > .controls {
@@ -210,6 +286,29 @@
                         1px
                         solid
                         color-mix(in hsl, var(--theme-text-color), transparent 80%);
+                }
+            }
+        }
+
+        .turns.editing {
+
+            .entry {
+                > .overlay > .controls {
+                    display: none;
+                }
+            }
+
+            .entry:not(.editTarget) {
+                opacity: 0.5;
+
+                > .overlay {
+                    display: none;
+                }
+            }
+
+            .entry.editTarget {
+                > .overlay {
+                    display: flex;
                 }
             }
         }
@@ -259,21 +358,42 @@
 
 
 <div class="component" class:empty={empty}>
-    <div class="turns">
+    <div class="turns" class:editing={isEditing}>
         {#each sortedIds as id, i (id)}
         {@const ini = initiativesById[id]}
         <div
             class="entry"
             class:odd={i % 2 !== 0}
             class:active={ini.active}
+            class:editTarget={isEditing && ini.editContent !== undefined}
             title={`Initiative: ${ini.initiative}`}
             >
             <span class="content">{ini.name}</span>
-            <div class="overlay">
-                <div class="ordinal">{ini.initiative}</div>
+            <div class="overlay"
+                >
+                {#if ini.editContent !== undefined}
+                <form on:submit|preventDefault={() => submitInitiative(id)}>
+                    <input
+                        class="ordinal"
+                        bind:value={initiativesById[id].editContent}
+                        bind:this={initiativesById[id].editElem}
+                        use:initializeEditor
+                        on:blur={() => cancelEditingInitiative(id)}
+                        type="number"
+                        step="0.1"
+                        />
+                </form>
+                {:else} 
+                <button
+                    type="button"
+                    class="ordinal"
+                    on:click|preventDefault={() => beginEditingInitiative(id)}
+                    >
+                    {ini.initiative}
+                </button>
+                {/if}
                 <div class="controls">
                     <IconButton title="View" iconPath="eye.svg" on:click={() => viewItem(id)} />
-                    <IconButton title="Edit" iconPath="pencil.svg" />
                 </div>
             </div>
         </div>
