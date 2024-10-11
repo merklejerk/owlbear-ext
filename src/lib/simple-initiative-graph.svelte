@@ -135,7 +135,7 @@
         newIdx = wrapInitiativeIndex(newIdx);
         const neededIds = [ sortedIds[oldIdx], sortedIds[newIdx] ];
         await obr.scene.items.updateItems(
-            it => neededIds.includes(it.id),
+            neededIds,
             items => {
                 for (const it of items) {
                     it.metadata[TRACKER_METADATA_ID].active = it.id === sortedIds[newIdx];
@@ -170,6 +170,16 @@
     async function viewItem(id: string): Promise<void> {
         const bounds = await obr.scene.items.getItemBounds([id]);
         if (bounds.width === 0 || bounds.height === 0) return;
+        bounds.min = {
+            x: bounds.center.x - bounds.width,
+            y: bounds.center.y - bounds.height,
+        };
+        bounds.max = {
+            x: bounds.center.x + bounds.width,
+            y: bounds.center.y + bounds.height,
+        };
+        bounds.height *= 2;
+        bounds.width *= 2;
         await obr.viewport.animateToBounds(bounds);
     }
    
@@ -194,7 +204,7 @@
             initiativesById[id].initiative = n;
             cancelEditingInitiative(id);
             obr.scene.items.updateItems(
-                it => it.id === id,
+                [id],
                 ([it]) => {
                     const metadata = it.metadata?.[TRACKER_METADATA_ID];
                     if (metadata && Number(metadata.count) !== n) {
@@ -274,6 +284,7 @@
                         margin: 0;
                         width: 100%;
                         outline: none;
+                        color: inherit; 
                         -moz-appearance: textfield;
 
                         &::-webkit-outer-spin-button, &::-webkit-inner-spin-button {

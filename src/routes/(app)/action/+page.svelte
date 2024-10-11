@@ -217,7 +217,8 @@
         .header {
             text-align: center;
             font-weight: bold;
-            opacity: 0.5;
+            opacity: 0.75;
+            color: var(--theme-secondary-color);
             margin-bottom: 0.25em;
         }
 
@@ -408,7 +409,7 @@
 
             .graph {
                 height: 100%;
-                width: 22ex;
+                width: 24ex;
                 overflow: hidden;
             }
         }
