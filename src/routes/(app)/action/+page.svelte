@@ -5,7 +5,6 @@
     import { cloneRoll, getRollResult, isCriticalRoll, ParseRollError, parseRollSpec, reroll, type Roll } from "$lib/rolls";
     import SimpleInitiativeGraph from "$lib/simple-initiative-graph.svelte";
     import { isRollMsg, type AnnounceMsgData, type RollMsgData } from "$lib/types";
-    import type { Item } from "@owlbear-rodeo/sdk";
     import { onMount } from "svelte";
 
     interface RollHistoryItem {
