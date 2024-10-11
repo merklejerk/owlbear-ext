@@ -207,7 +207,7 @@
             grid-template:  'test-controls test-controls' auto
                             'rolls-header initiative-header' auto
                             'roll-history initiative' 1fr
-                            'roll-input initiative' auto / 42ex fit-content(100%);
+                            'roll-input initiative' auto / 40ex fit-content(100%);
         }
 
         .test-controls {
@@ -349,7 +349,7 @@
             .submit-container.validated {
                 position: relative;
                 z-index: 1;
-                transform-origin: 45% 50%;
+                transform-origin: 47% 50%;
                 animation: 0.85s linear infinite spin;
             }
 
@@ -403,12 +403,12 @@
                 width: 0.33rex;
                 height: 50%;
                 border-radius: 100%;
-                margin: 1rex;
+                margin: 1.5rex;
             }
 
             .graph {
                 height: 100%;
-                width: 20ex;
+                width: 22ex;
                 overflow: hidden;
             }
         }

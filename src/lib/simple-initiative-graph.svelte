@@ -5,7 +5,7 @@
     import { onMount } from "svelte";
     import { getObr } from "./obr-host.svelte";
     import type { Item } from "@owlbear-rodeo/sdk";
-    import { wrapIndex } from "./util";
+    import { delay, wrapIndex } from "./util";
     import { PUBLIC_EXT_ID } from "$env/static/public";
     import IconButton from "./icon-button.svelte";
     import Icon from "./icon.svelte";
@@ -14,6 +14,7 @@
         initiative: number;
         name: string;
         active: boolean;
+        entryElem?: HTMLElement;
         editContent?: string;
         editElem?: HTMLElement;
     }
@@ -92,12 +93,26 @@
             });
     }
 
-    function processSceneItems(items: Item[]) {
+    function initializeEntry(node: HTMLDivElement, id: string) {
+        const ini = initiativesById[id];
+        ini.entryElem = node; 
+    }
+
+    function scrollToId(id: string) {
+        const ini = initiativesById[id];
+        if (!isEditing && ini.entryElem) {
+            ini.entryElem.scrollIntoView();
+        }
+    }
+
+    async function processSceneItems(items: Item[]) {
         const trackedItems = items.filter(item => item.metadata[TRACKER_METADATA_ID]);
         const oldActiveIdx = findActiveIdx();
+        const oldActiveId = sortedIds[oldActiveIdx];
         initiativesById = Object.assign({},
             ...trackedItems.map(item => ({
                 [item.id]: {
+                    ...initiativesById[item.id],
                     initiative: Number((item.metadata[TRACKER_METADATA_ID] as TrackerMetadata)?.count) ?? 0,
                     active: !!(item.metadata[TRACKER_METADATA_ID] as TrackerMetadata).active,
                     name: (item as any).text?.plainText || item.name,
@@ -105,12 +120,17 @@
             })),
         );
         populateIds();
-        if (findActiveIdx() === -1 && sortedIds.length) {
-            updateActive(oldActiveIdx, oldActiveIdx);
+        let newActiveIdx = findActiveIdx();
+        if (newActiveIdx === -1 && sortedIds.length) {
+            newActiveIdx = await updateActive(oldActiveIdx, oldActiveIdx);
+        }
+        const activeId = sortedIds[findActiveIdx()];
+        if (activeId !== oldActiveId) {
+            scrollToId(activeId);
         }
     }
 
-    async function updateActive(oldIdx: number, newIdx: number): Promise<void> {
+    async function updateActive(oldIdx: number, newIdx: number): Promise<number> {
         oldIdx = wrapInitiativeIndex(oldIdx);
         newIdx = wrapInitiativeIndex(newIdx);
         const neededIds = [ sortedIds[oldIdx], sortedIds[newIdx] ];
@@ -122,6 +142,7 @@
                 }
             },
         );
+        return newIdx;
     }
 
     function findActiveIdx(): number {
@@ -172,7 +193,6 @@
         if (!isNaN(n)) {
             initiativesById[id].initiative = n;
             cancelEditingInitiative(id);
-            // populateIds();
             obr.scene.items.updateItems(
                 it => it.id === id,
                 ([it]) => {
@@ -198,7 +218,7 @@
         gap: 0.5em;
 
         .turns {
-            overflow: auto;
+            overflow: hidden auto;
             flex: 1 0;
 
             .entry {
@@ -242,6 +262,8 @@
                         flex: 1 0;
                         text-align: left;
                         padding: 0;
+                        user-select: none;
+                        cursor: inherit;
                     }
                    
                     form > input.ordinal {
@@ -366,6 +388,7 @@
             class:odd={i % 2 !== 0}
             class:active={ini.active}
             class:editTarget={isEditing && ini.editContent !== undefined}
+            use:initializeEntry={id}
             title={`Initiative: ${ini.initiative}`}
             >
             <span class="content">{ini.name}</span>
