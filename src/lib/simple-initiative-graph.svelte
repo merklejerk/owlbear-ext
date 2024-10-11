@@ -101,7 +101,17 @@
     function scrollToId(id: string) {
         const ini = initiativesById[id];
         if (!isEditing && ini.entryElem) {
-            ini.entryElem.scrollIntoView();
+            const e = ini.entryElem;
+            const p = e.parentElement!;
+            const bounds = e.getBoundingClientRect();
+            const scroll = {
+                top: p.scrollTop,
+                bottom: p.scrollTop + p.scrollHeight,
+                height: p.scrollHeight,
+            };
+            if (scroll.top > bounds.top || scroll.bottom < bounds.bottom) {
+                p.scrollTo(0, bounds.top);
+            }
         }
     }
 

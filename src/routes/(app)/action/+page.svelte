@@ -201,6 +201,7 @@
         overflow: hidden;
 
         .grid {
+            max-height: 100%;
             padding: 1ex;
             display: grid;
             grid-template:  'test-controls test-controls' auto
