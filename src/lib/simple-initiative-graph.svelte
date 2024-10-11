@@ -5,7 +5,7 @@
     import { onMount } from "svelte";
     import { getObr } from "./obr-host.svelte";
     import type { Item } from "@owlbear-rodeo/sdk";
-    import { delay, wrapIndex } from "./util";
+    import { wrapIndex } from "./util";
     import { PUBLIC_EXT_ID } from "$env/static/public";
     import IconButton from "./icon-button.svelte";
     import Icon from "./icon.svelte";
@@ -358,6 +358,7 @@
                 --icon-size: 1em;
 
                 > .content {
+                    user-select: none; 
                     padding: 0.3ex;
                 }
 
