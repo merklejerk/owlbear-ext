@@ -37,3 +37,8 @@ export function isRollMsg(msg: BroadcastMsg | InternalMsg): msg is InternalMsg<R
 export function isAnnounceMsg(msg: BroadcastMsg | InternalMsg): msg is InternalMsg<AnnounceMsgData> {
     return (msg.data as any)?.topic === 'announce';
 }
+
+export interface TrackerMetadata {
+    count?: string;
+    active: boolean;
+}

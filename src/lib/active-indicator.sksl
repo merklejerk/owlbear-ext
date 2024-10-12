@@ -1,0 +1,7 @@
+uniform vec2 size;
+uniform mat3 modelView;
+
+half4 main(float2 coord) {
+    // float2 uv = (vec3(coord, 1) * modelView).xy;
+    return vec4(1.0, 1., 0, 0);
+}

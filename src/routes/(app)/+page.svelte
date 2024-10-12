@@ -6,6 +6,7 @@
     import { onMount } from "svelte";
     import { POPOVER_ID as ROLL_POPOVER_ID } from "./roll-popover/+page.svelte";
     import AnnounceWatcher from "$lib/announce-watcher.svelte";
+    import InitiativeWatcher from "$lib/initiative-watcher.svelte";
 
     const obr = getObr();
 
@@ -27,3 +28,4 @@
  <ObrDiceExtHook />
  <AnnounceWatcher />
  <CritWatcher popupDelay={5000} />
+ <!-- <InitiativeWatcher /> -->

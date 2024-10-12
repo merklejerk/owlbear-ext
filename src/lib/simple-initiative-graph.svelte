@@ -9,6 +9,7 @@
     import { PUBLIC_EXT_ID } from "$env/static/public";
     import IconButton from "./icon-button.svelte";
     import Icon from "./icon.svelte";
+    import type { TrackerMetadata } from "./types";
 
     interface Initiative {
         initiative: number;
@@ -17,11 +18,6 @@
         entryElem?: HTMLElement;
         editContent?: string;
         editElem?: HTMLElement;
-    }
-
-    interface TrackerMetadata {
-        count?: string;
-        active: boolean;
     }
     
     const TRACKER_METADATA_ID = 'rodeo.owlbear.initiative-tracker/metadata';
@@ -52,23 +48,14 @@
     $: isEditing = Object.values(initiativesById).some(ini => ini.editContent !== undefined);
 
     onMount(() => {
-        (async () => {
-            const hook = async () => {
-                obr.scene.getMetadata().then(processSceneMetadata);
-                obr.scene.items.getItems().then(processSceneItems);
-                obr.scene.items.onChange(items => processSceneItems(items));
-                obr.scene.onMetadataChange(processSceneMetadata);
-            };
-            if (await obr.scene.isReady()) {
-                hook();
-            } else {
-                obr.scene.onReadyChange(rdy => {
-                    if (rdy) {
-                        hook();
-                    }
-                });
-            }
-        })();
+        const setupScene = () => {
+            obr.scene.getMetadata().then(processSceneMetadata);
+            obr.scene.items.getItems().then(processSceneItems);
+            obr.scene.items.onChange(items => processSceneItems(items));
+            obr.scene.onMetadataChange(processSceneMetadata);
+        };
+        obr.scene.onReadyChange(rdy => { if (rdy) setupScene(); });
+        obr.scene.isReady().then(rdy => { if (rdy) setupScene(); })
     });
 
     function wrapInitiativeIndex(idx: number): number {
@@ -148,7 +135,8 @@
             neededIds,
             items => {
                 for (const it of items) {
-                    it.metadata[TRACKER_METADATA_ID].active = it.id === sortedIds[newIdx];
+                    const metadata = it.metadata[TRACKER_METADATA_ID] as TrackerMetadata;
+                    metadata.active = it.id === sortedIds[newIdx];
                 }
             },
         );
@@ -216,7 +204,7 @@
             obr.scene.items.updateItems(
                 [id],
                 ([it]) => {
-                    const metadata = it.metadata?.[TRACKER_METADATA_ID];
+                    const metadata = it.metadata?.[TRACKER_METADATA_ID] as TrackerMetadata | undefined;
                     if (metadata && Number(metadata.count) !== n) {
                         metadata.count = `${n}`;
                     }
