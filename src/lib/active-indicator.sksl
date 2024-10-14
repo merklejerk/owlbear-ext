@@ -1,7 +1,62 @@
 uniform vec2 size;
 uniform mat3 modelView;
+uniform float ground;
+uniform float isFront;
+uniform float speed;
+uniform float time;
+uniform float3 color1;
+uniform float3 color2;
+uniform float opacity;
+
+const float PI = 3.1415926;
+
+float2 hash(float2 p) {
+	p = float2(dot(p,float2(127.1,311.7)), dot(p,float2(269.5,183.3)));
+	return -1.0 + 2.0 * fract(sin(p) * 43758.5453123);
+}
+
+float hash(float p) {
+    return hash(float2(p * p, p)).x;
+}
+
+float getCylinderUnitHeightAt(float2 unitCoord, float2 ellHalfSize) {
+    float a2 = ellHalfSize.x * ellHalfSize.x;
+    float b2 = ellHalfSize.y * ellHalfSize.y;
+    float dx = (unitCoord.x - 0.5); 
+    float q = sqrt(a2 * b2 * (a2 - dx * dx));
+    float w = a2 * unitCoord.y;
+    return (isFront >= 0 ? (w - q) : (q + w)) / a2;
+}
+
+float intensity(float x, float octave) {
+    float t = (isFront >= 0 ? time : -time) / octave * speed;
+    float a = (x + t + hash(octave)) * PI * 2;
+    return sin(a * octave) * 0.5 + 1;
+}
+
+float getCylinderOpacity(float2 unitCoord) {
+    float2 ellHalfSize = float2(0.5, ground >= 0.5 ? 1 - ground : ground);
+    float2 bottomTop = float2(
+        ellHalfSize.y,
+        ground
+    );
+    float h = getCylinderUnitHeightAt(unitCoord, ellHalfSize);
+    if (h > bottomTop.y || h < bottomTop.x) return 0;
+    float o = (h - bottomTop.x) / (bottomTop.y - bottomTop.x);
+    return clamp(o, 0, 1);
+}
 
 half4 main(float2 coord) {
-    // float2 uv = (vec3(coord, 1) * modelView).xy;
-    return vec4(1.0, 1., 0, 0);
+    float2 unitCoord = coord / size;
+    float c = getCylinderOpacity(unitCoord);
+    {
+        float f = 0;
+        f += intensity(unitCoord.x, 1) * (1. / 2);
+        f += intensity(unitCoord.x, 2) * (1. / 6);
+        f += intensity(unitCoord.x, 4) * (1. / 6);
+        f += intensity(unitCoord.x, 8) * (1. / 6);
+        f *= f;
+        c *= clamp(f, 0, 1) * opacity;
+    }
+    return half4(mix(color2, color1, c) * c, c);
 }

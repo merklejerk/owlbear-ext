@@ -28,4 +28,4 @@
  <ObrDiceExtHook />
  <AnnounceWatcher />
  <CritWatcher popupDelay={5000} />
- <!-- <InitiativeWatcher /> -->
+ <InitiativeWatcher />

@@ -5,8 +5,6 @@
         type Item,
         buildEffect,
         buildShape,
-        type Shape,
-        MathM,
         Math2,
     } from "@owlbear-rodeo/sdk";
     import { PUBLIC_EXT_ID } from "$env/static/public";
@@ -15,6 +13,13 @@
 
     const TRACKER_METADATA_ID = 'rodeo.owlbear.initiative-tracker/metadata';
     const INDICATOR_ID = `${PUBLIC_EXT_ID}/initiative-active`;
+    const SHADER_UNIFORMS = {
+        color1: { x: 0.33, y: 1, z: 0.33 },
+        color2: { x: 0.5, y: 0.85, z: 0.66 },
+        ground: 0.75,
+        speed: 0.75,
+    };
+    const EFFECT_SIZE = { x: 1.5, y: 1.33 };
     const obr = getObr();
 
     function processSceneItems(items: Item[]) {
@@ -36,79 +41,76 @@
             },
         );
     }
-
-    function isShape(it: Item): it is Shape {
-        return it.type === 'SHAPE';
-    }
    
     async function attachActiveIndicatorTo(target: Item) {
         const bounds = await obr.scene.items.getItemBounds([target.id]);
-        const w = bounds.width * 1.33;
-        const h = bounds.height * 1.66;
+        const size = { x: bounds.width, y: bounds.height };
         await obr.scene.local.updateItems([INDICATOR_ID],
             ([indicator]) => {
-                if (!isShape(indicator)) return;
-                // if (indicator.attachedTo === target.id) return;
-                const targetM = MathM.fromItem(target);
-                const invTargetM = MathM.inverse(targetM);
-                const d = MathM.decompose(invTargetM);
-                console.log(d, MathM.decompose(targetM), target.position, bounds.center);
-                const b = Math2.rotate({ x: bounds.width, y: bounds.height }, { x: 0, y: 0 }, target.rotation);
                 indicator.scale = {
                     x: bounds.width,
                     y: bounds.height,
                 };
-                indicator.position = bounds.min;
+                indicator.position = Math2.subtract(
+                    bounds.center,
+                    Math2.multiply(Math2.multiply(EFFECT_SIZE, 0.5), size),
+                );
                 indicator.rotation = 0;
                 indicator.attachedTo = target.id;
             },
         );
-        console.log(await obr.scene.local.getItemAttachments([target.id]));
     }
    
     async function createIndicator() {
         const indicator = buildShape()
             .id(INDICATOR_ID)
             .layer('ATTACHMENT')
+            .disableHit(true)
+            .locked(true)
+            .strokeColor('transparent')
+            .fillColor('transparent')
             .width(1)
             .height(1)
-            .strokeColor('transparent')
-            .fillColor('green')
-            // .fillOpacity(0.5) 
-            .disableHit(true)
-            .locked(true)
-            // .visible(false)
-            .disableAttachmentBehavior(['COPY', 'DELETE', 'ROTATION', 'SCALE', 'POSITION'])
+            .disableAttachmentBehavior(['COPY', 'DELETE', 'ROTATION', 'SCALE'])
             .build();
+        const uniforms = Object.entries(SHADER_UNIFORMS).map(([k, v]) => ({
+            name: k, value: v,
+        }));
         const backEffect = buildEffect()
             .id(`${INDICATOR_ID}/back`)
+            .effectType('STANDALONE')
+            .sksl(SKSL)
             .disableHit(true)
             .locked(true)
-            .effectType('ATTACHMENT')
-            .sksl(SKSL)
-            .width(0)
-            .height(0)
-            .layer('DRAWING')
+            .width(EFFECT_SIZE.x)
+            .height(EFFECT_SIZE.y)
+            .layer('MOUNT')
+            .zIndex(-1) 
             .attachedTo(indicator.id)
-            // .disableAttachmentBehavior([])
+            .uniforms([
+                ...uniforms,
+                { name: 'isFront', value: -1 },
+                { name: 'opacity', value: 0.66 },
+            ])
             .build();
         const frontEffect = buildEffect()
             .id(`${INDICATOR_ID}/front`)
+            .effectType('STANDALONE')
+            .sksl(SKSL)
             .disableHit(true)
             .locked(true)
-            .effectType('ATTACHMENT')
-            .sksl(SKSL)
-            .width(1)
-            .height(1)
-            // .blendMode('SR')
-            // .position(backEffect.position)
+            .width(EFFECT_SIZE.x)
+            .height(EFFECT_SIZE.y)
             .layer('ATTACHMENT')
+            .zIndex(1000)
             .attachedTo(indicator.id)
-            // .scale({x: 0, y: 0})
-            // .disableAttachmentBehavior(['SCALE'])
+            .uniforms([
+                ...uniforms,
+                { name: 'isFront', value: 1 },
+                { name: 'opacity', value: 1 },
+            ])
             .build();
-        await obr.scene.local.addItems([indicator]);
-        await obr.scene.local.addItems([frontEffect]);
+        await obr.scene.local.addItems([indicator, backEffect, frontEffect]);
     }
 
     onMount(() => {
