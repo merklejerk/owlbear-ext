@@ -35,16 +35,15 @@
     }
 
     async function removeActiveIndicator() {
-        return obr.scene.local.updateItems([INDICATOR_ID],
-            ([it]) => {
-                it.attachedTo = undefined;
-            },
-        );
+        obr.scene.local.deleteItems([INDICATOR_ID]);
     }
    
     async function attachActiveIndicatorTo(target: Item) {
         const bounds = await obr.scene.items.getItemBounds([target.id]);
         const size = { x: bounds.width, y: bounds.height };
+        if ((await obr.scene.local.getItems([INDICATOR_ID])).length === 0) {
+            await createIndicator();
+        }
         await obr.scene.local.updateItems([INDICATOR_ID],
             ([indicator]) => {
                 indicator.scale = {
@@ -61,7 +60,7 @@
         );
     }
    
-    async function createIndicator() {
+    async function createIndicator(): Promise<Item> {
         const indicator = buildShape()
             .id(INDICATOR_ID)
             .layer('ATTACHMENT')
@@ -111,6 +110,7 @@
             ])
             .build();
         await obr.scene.local.addItems([indicator, backEffect, frontEffect]);
+        return indicator;
     }
 
     onMount(() => {
