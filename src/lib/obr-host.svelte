@@ -12,6 +12,7 @@
         destroyed: boolean;
         players: Readable<PlayerMap>;
         theme: Readable<ThemeMode>;
+        readyTime: number;
     }
 
     export interface PlayerInfo {
@@ -29,6 +30,10 @@
         return inst;
     }
 
+    export function getObrReadyTime(): number {
+        return getContext<Context>(CONTEXT_KEY).readyTime;
+    }
+
     export function getPlayersStore(): Readable<PlayerMap> {
          return getContext<Context>(CONTEXT_KEY).players;
     }
@@ -44,16 +49,30 @@
     import { page } from "$app/stores";
     import { writable, type Readable } from "svelte/store";
 
+    interface WindowHookData {
+        origin: string;
+        userId: string;
+        ref: string;
+        readyTime: number;
+    }
+    
     let styleVars = {};
     let ready = false;
     const themeMode = writable<ThemeMode>('DARK');
     const players = writable<PlayerMap>({});
 
-    const ctx: Context = { obr, destroyed: false, players, theme: themeMode };
+    const ctx: Context = {
+        obr,
+        destroyed: false,
+        players,
+        theme: themeMode,
+        readyTime: 0,
+    };
     setContext(CONTEXT_KEY, ctx);
     
-    async function setReady() {
+    async function setReady(readyTime: number) {
         console.info(`OBR ready on ${$page.url.pathname}`);
+        ctx.readyTime = readyTime;
         updatePlayers([
             ...await obr.party.getPlayers(),
             await (async () => {
@@ -87,6 +106,7 @@
 
     function initDevTools() {
         (window as any).__owl = {
+            inst: obr,
             async getPlayers() {
                 const r = await obr.party.getPlayers();
                 console.log(r);
@@ -137,7 +157,10 @@
     }
 
     function tryToBootstrap() {
-        const rdy = (window as any).__obr_ready as { origin: string; userId: string; ref: string; } | undefined;
+        const rdy = (window as any).__obr_ready as WindowHookData | undefined;
+        obr.onReady(() => {
+            setReady(rdy?.readyTime ?? Date.now());
+        });
         if (!rdy) return;
         const bus = (obr.broadcast as any).messageBus as any;
         bus.handleMessage({
@@ -154,9 +177,8 @@
     
     onMount(() => {
         if (obr.isReady) {
-            setReady();
+            setReady(Date.now());
         } else if (obr.isAvailable) {
-            obr.onReady(() => setReady());
             tryToBootstrap();
         } else {
             console.warn('Not loaded in Owlbear!');

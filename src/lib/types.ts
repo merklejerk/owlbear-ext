@@ -15,6 +15,12 @@ export interface AnnounceMsgData {
     msg: string;
 }
 
+export interface EffectMsgData {
+    topic: 'effect';
+    effect: string;
+    on: boolean;
+}
+
 export type InternalMsgData<T extends any> = { topic: string; } & T;
 
 export interface BroadcastMsg {
@@ -22,7 +28,7 @@ export interface BroadcastMsg {
     connectionId: string;
 }
 
-export interface InternalMsg<T = unknown> extends BroadcastMsg{
+export interface InternalMsg<T = unknown> extends BroadcastMsg {
     data: InternalMsgData<T>;
 };
 
@@ -36,6 +42,10 @@ export function isRollMsg(msg: BroadcastMsg | InternalMsg): msg is InternalMsg<R
 
 export function isAnnounceMsg(msg: BroadcastMsg | InternalMsg): msg is InternalMsg<AnnounceMsgData> {
     return (msg.data as any)?.topic === 'announce';
+}
+
+export function isEffectMessage(msg: BroadcastMsg | InternalMsg): msg is InternalMsg<EffectMsgData> {
+    return (msg.data as any)?.topic === 'effect';
 }
 
 export interface TrackerMetadata {

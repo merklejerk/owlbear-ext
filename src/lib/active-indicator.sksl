@@ -1,5 +1,4 @@
 uniform vec2 size;
-uniform mat3 modelView;
 uniform float ground;
 uniform float isFront;
 uniform float speed;

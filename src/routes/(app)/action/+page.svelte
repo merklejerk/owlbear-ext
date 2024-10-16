@@ -4,7 +4,9 @@
     import RollFormula from "$lib/roll-formula.svelte";
     import { cloneRoll, getRollResult, isCriticalRoll, ParseRollError, parseRollSpec, reroll, type Roll } from "$lib/rolls";
     import SimpleInitiativeGraph from "$lib/simple-initiative-graph.svelte";
-    import { isRollMsg, type AnnounceMsgData, type RollMsgData } from "$lib/types";
+    import { isRollMsg, type AnnounceMsgData, type EffectMsgData, type RollMsgData } from "$lib/types";
+    import { isTruthy } from "$lib/util";
+    import ViewportEffects from "$lib/viewport-effects.svelte";
     import { onMount } from "svelte";
 
     interface RollHistoryItem {
@@ -22,7 +24,12 @@
         message: string;
     }
 
-    type InputAction = RollAction | AnnounceAction;
+    interface CommandAction {
+        cmd: string;
+        args: string[];
+    }
+
+    type InputAction = RollAction | AnnounceAction | CommandAction;
 
     const INPUT_HISTORY_SIZE = 16;
     const obr = getObr();
@@ -33,6 +40,7 @@
     let rawInput = '';
     let clientWidth = 0;
     let isInitiativeGraphEmpty = true;
+    let getEffectStatus: (e: string) => boolean;
 
     function isRollAction(action: InputAction): action is RollAction {
         return !!(action as any).rolls;
@@ -40,6 +48,10 @@
 
     function isAnnounceAction(action: InputAction): action is AnnounceAction {
         return typeof (action as any).message === 'string';
+    }
+
+    function isCommandAction(action: InputAction): action is CommandAction {
+        return typeof (action as any).cmd === 'string';
     }
 
     function validateInput(input: string): boolean {
@@ -76,9 +88,13 @@
     }
 
     function parseInput(input: string): InputAction | null {
-        if ((input).startsWith('!')) {
+        if (input.startsWith('!')) {
             if (input.length === 1) return null;
             return { message: input.substring(1) };
+        }
+        if (input.startsWith('/')) {
+            const parts = input.slice(1).split(/\s+/);
+            return { cmd: parts[0].trimEnd(), args: parts.slice(1) };
         }
         const rolls = parseRollSpec(input).map(r => reroll(r));
         if (!rolls.length) return null;
@@ -101,6 +117,17 @@
                 );
             } else if (isRollAction(action)) {
                doRolls(action.rolls);
+            } else if (isCommandAction(action)) {
+                if (action.cmd === 'effect') {
+                    if (action.args.length < 1) {
+                        throw new Error('Invalid effect');
+                    }
+                    runEffect(action.args[0], ...action.args.slice(1));
+                } else if (isTruthy(PUBLIC_DEV_MODE)) {
+                    if (action.cmd === 'crit') {
+                        runCritTest();
+                    }
+                }
             }
         } catch (e) {
             if (e instanceof ParseRollError) {
@@ -112,6 +139,18 @@
         addToInputHistory(rawInput);
         rawInput = '';
         scrollToEnd();
+    }
+
+    function runEffect(effect: string, ...args: any) {
+        obr.broadcast.sendMessage(
+            PUBLIC_EXT_ID,
+            {
+                topic: 'effect',
+                effect: effect,
+                on: !getEffectStatus(effect),
+            } satisfies EffectMsgData,
+            { destination: 'ALL' },
+        );
     }
 
     function doRolls(rolls: Roll[]) {
@@ -437,11 +476,9 @@
     }
 </style>
 
-<div class="component" class:dev={!!PUBLIC_DEV_MODE}>
+<div class="component" class:dev={isTruthy(PUBLIC_DEV_MODE)}>
+    <ViewportEffects bind:getEffectStatus />
     <div class="grid" bind:offsetWidth={clientWidth} class:no-initiative={isInitiativeGraphEmpty}>
-        <div class="test-controls">
-            <button on:click={() => runCritTest()}>crit!</button>
-        </div>
         <div class="rolls-header header">Rolls</div>
         <div class="roll-history" bind:this={historyElement}>
             {#each rollHistory as item (item.rollId)}

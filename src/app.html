@@ -20,6 +20,7 @@
 				if (e.origin === origin && e.data.id === 'OBR_READY') {
 					window.__obr_ready = {
 						origin,
+						readyTime: Date.now(),
 						...e.data.data,
 					};
 				}

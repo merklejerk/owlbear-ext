@@ -15,7 +15,7 @@
         };
     }
 
-    export let popupDelay = 5000;
+    export let popupDelay = 1000;
     const obr = getObr();
     const players = getPlayersStore();
     let critCounter = 0;
@@ -23,21 +23,23 @@
 
     async function showCrits(playerNames: string[]): Promise<void> {
         const origCounter = critCounter += 1;
-        await obr.popover.open({
-            url: `${PUBLIC_PATH_PREFIX}/crit-popover?${
-                new URLSearchParams({
-                    players: playerNames.join(','),
-                }).toString()
-            }`,
-            disableClickAway: true,
-            hidePaper: true,
-            width: 512,
-            height: 512,
-            marginThreshold: 0,
-            id: POPOVER_ID,
-            anchorOrigin: { horizontal: 'CENTER', vertical: 'CENTER' },
-            transformOrigin: { horizontal: 'CENTER', vertical: 'CENTER' },
-        });
+        await Promise.all([
+            obr.popover.open({
+                url: `${PUBLIC_PATH_PREFIX}/crit-popover?${
+                    new URLSearchParams({
+                        players: playerNames.join(','),
+                    }).toString()
+                }`,
+                disableClickAway: true,
+                hidePaper: true,
+                width: 512,
+                height: 512,
+                marginThreshold: 0,
+                id: POPOVER_ID,
+                anchorOrigin: { horizontal: 'CENTER', vertical: 'CENTER' },
+                transformOrigin: { horizontal: 'CENTER', vertical: 'CENTER' },
+            }),
+        ]);
         if (popupDelay > 0) {
             await delay(popupDelay);
             if (critCounter === origCounter) {

@@ -1,0 +1,22 @@
+uniform vec2 size;
+uniform mat3 view;
+uniform shader scene;
+uniform float speed;
+uniform float time;
+uniform float amplitude;
+uniform float spacing;
+
+const float PI = 3.1415926;
+
+float2 rippleUV(float2 uv) {
+    uv = (uv / size) * 2 - 1;
+    float uvl = length(uv);
+    float t = (spacing / (1 + uvl) + time * speed) * 2 * PI;
+    float o = sin(t) * amplitude;
+    return ((uv + (uv / uvl * o)) / 2 + 0.5) * size;
+}
+
+half4 main(float2 coord) {
+    float2 uv = (float3(coord, 1) * view).xy;
+    return scene.eval(rippleUV(uv));
+}
