@@ -1,0 +1,1 @@
+export const env={"PUBLIC_DEV_MODE":"","PUBLIC_PATH_PREFIX":"/owlbear-ext","PUBLIC_EXT_ID":"com.merklejerk.mi-extension"}

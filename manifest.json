@@ -1,0 +1,15 @@
+{
+    "name": "Mi'extension",
+    "version": "1.0.0",
+    "manifest_version": 1,
+    "author": "Lawrence Forman <me@merklejerk.com>",
+    "icon": "/owlbear-ext/hat.svg",
+    "action": {
+        "title": "Mi'extension",
+        "icon": "/owlbear-ext/hat.svg",
+        "popover": "/owlbear-ext/action",
+        "width": 450,
+        "height": 384
+    },
+    "background_url": "/owlbear-ext"
+}
