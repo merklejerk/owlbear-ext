@@ -122,7 +122,7 @@
             newActiveIdx = await updateActive(oldActiveIdx, oldActiveIdx);
         }
         const activeId = sortedIds[findActiveIdx()];
-        if (activeId !== oldActiveId) {
+        if (activeId && activeId !== oldActiveId) {
             scrollToId(activeId);
         }
     }

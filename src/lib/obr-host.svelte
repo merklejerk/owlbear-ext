@@ -11,7 +11,7 @@
         obr: OBR;
         destroyed: boolean;
         players: Readable<PlayerMap>;
-        theme: Readable<ThemeMode>;
+        theme: Readable<Theme>;
         readyTime: number;
     }
 
@@ -38,7 +38,7 @@
          return getContext<Context>(CONTEXT_KEY).players;
     }
 
-    export function getTheme(): Readable<ThemeMode> {
+    export function getTheme(): Readable<Theme> {
          return getContext<Context>(CONTEXT_KEY).theme;
     }
 </script>
@@ -58,14 +58,14 @@
     
     let styleVars = {};
     let ready = false;
-    const themeMode = writable<ThemeMode>('DARK');
+    const theme = writable<Theme>(null as any);
     const players = writable<PlayerMap>({});
 
     const ctx: Context = {
         obr,
         destroyed: false,
         players,
-        theme: themeMode,
+        theme,
         readyTime: 0,
     };
     setContext(CONTEXT_KEY, ctx);
@@ -140,7 +140,7 @@
             '--theme-bg': theme.background.paper,
             '--theme-bg-x': theme.background.default,
         };
-        $themeMode = theme.mode;
+        $theme = theme;
     }
 
     function updatePlayers(players: Player[]): void {

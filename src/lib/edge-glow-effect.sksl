@@ -1,0 +1,37 @@
+uniform vec2 size;
+uniform mat3 view;
+uniform shader scene;
+uniform float speed;
+uniform float time;
+uniform float margin;
+uniform float3 color;
+uniform float opacity;
+
+const float PI = 3.1415926;
+
+float getMarginDist(float2 unitUv, float2 unitMargins) {
+    float2 d1 = unitMargins - unitUv;
+    float2 d2 = unitUv - (1 - unitMargins);
+    return max(0, max(max(d1.x, d2.x), max(d1.y, d2.y)));
+}
+
+float sampleEdgeOpacity(float2 uv) {
+    uv = uv / size;
+    float2 unitMargins = margin * float2(size.y / size.x, 1);
+    return pow(getMarginDist(uv, unitMargins), 1.15);
+}
+
+float varyOpacity(float o) {
+    return max(0.5, abs(sin(time * speed * PI))) * o;
+}
+
+half4 blend(half4 src, half4 dst) {
+    return src * (1 - dst.a) + dst * dst.a;
+}
+
+half4 main(float2 coord) {
+    float2 uv = (float3(coord, 1) * view).xy;
+    half4 orig = scene.eval(uv);
+    float edgeOpacity = varyOpacity(sampleEdgeOpacity(uv));
+    return blend(orig, half4(color, opacity * edgeOpacity));
+}

@@ -28,6 +28,7 @@
 	"type": "module",
 	"dependencies": {
 		"@owlbear-rodeo/sdk": "^3.0.0",
-		"events": "^3.3.0"
+		"events": "^3.3.0",
+		"parse-css-color": "^0.2.1"
 	}
 }
