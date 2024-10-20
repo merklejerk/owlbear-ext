@@ -119,7 +119,7 @@
         populateIds();
         let newActiveIdx = findActiveIdx();
         if (newActiveIdx === -1 && sortedIds.length) {
-            newActiveIdx = await updateActive(oldActiveIdx, oldActiveIdx);
+            newActiveIdx = await updateActive(oldActiveIdx);
         }
         const activeId = sortedIds[findActiveIdx()];
         if (activeId && activeId !== oldActiveId) {
@@ -127,12 +127,10 @@
         }
     }
 
-    async function updateActive(oldIdx: number, newIdx: number): Promise<number> {
-        oldIdx = wrapInitiativeIndex(oldIdx);
+    async function updateActive(newIdx: number): Promise<number> {
         newIdx = wrapInitiativeIndex(newIdx);
-        const neededIds = [ sortedIds[oldIdx], sortedIds[newIdx] ];
         await obr.scene.items.updateItems(
-            neededIds,
+            sortedIds,
             items => {
                 for (const it of items) {
                     const metadata = it.metadata[TRACKER_METADATA_ID] as TrackerMetadata;
@@ -150,7 +148,7 @@
     async function goToNextTurn() {
         if (sortedIds.length === 0) return;
         const currentIdx = wrapInitiativeIndex(findActiveIdx());
-        updateActive(currentIdx, currentIdx + 1);
+        updateActive(currentIdx + 1);
         if (currentIdx === sortedIds.length - 1) {
             ++roundCount;
         }
@@ -159,7 +157,7 @@
     async function goToPrevTurn() {
         if (sortedIds.length === 0) return;
         const currentIdx = wrapInitiativeIndex(findActiveIdx());
-        updateActive(currentIdx, currentIdx - 1);
+        updateActive(currentIdx - 1);
         if (currentIdx === 0 && roundCount > 0) {
             --roundCount;
         }
@@ -411,7 +409,13 @@
                         bind:value={initiativesById[id].editContent}
                         bind:this={initiativesById[id].editElem}
                         use:initializeEditor
-                        on:blur={() => cancelEditingInitiative(id)}
+                        on:blur={() => submitInitiative(id)}
+                        on:keydown={(e) => {
+                            if (e.code === 'Escape') {
+                                e.preventDefault();
+                                cancelEditingInitiative(id);
+                            }
+                        }}
                         type="number"
                         step="0.1"
                         />
