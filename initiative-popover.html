@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<link rel="icon" href="./favicon.png" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		
+		<link rel="modulepreload" href="./_app/immutable/entry/start.DuCMgQmg.js">
+		<link rel="modulepreload" href="./_app/immutable/chunks/entry.CCyjdftm.js">
+		<link rel="modulepreload" href="./_app/immutable/chunks/scheduler.BXvgzZK-.js">
+		<link rel="modulepreload" href="./_app/immutable/entry/app.RcT57BKC.js">
+		<link rel="modulepreload" href="./_app/immutable/chunks/index.BQ0Ppj1p.js">
+	</head>
+	<body>
+		<div style="display: contents">
+			<script>
+				{
+					__sveltekit_lzylvc = {
+						base: new URL(".", location).pathname.slice(0, -1),
+						assets: "/owlbear-ext"
+					};
+
+					const element = document.currentScript.parentElement;
+
+					Promise.all([
+						import("./_app/immutable/entry/start.DuCMgQmg.js"),
+						import("./_app/immutable/entry/app.RcT57BKC.js")
+					]).then(([kit, app]) => {
+						kit.start(app, element);
+					});
+				}
+			</script>
+		</div>
+	</body>
+	<script lang="javascript">
+		// Hack to help missed OBR_READY events in dev mode.
+		(() => {
+			const params = new URLSearchParams(window.location.search);
+			if (!params.get('obrref')) return;
+			const [origin, roomId] = atob(params.get('obrref')).split(' ');
+			if (!origin || !roomId) return;
+			window.addEventListener('message', e => {
+				if (e.origin === origin && e.data.id === 'OBR_READY') {
+					window.__obr_ready = {
+						origin,
+						readyTime: Date.now(),
+						...e.data.data,
+					};
+				}
+			});
+		})();
+	</script>
+</html>
