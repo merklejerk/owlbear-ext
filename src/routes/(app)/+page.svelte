@@ -7,6 +7,7 @@
     import { POPOVER_ID as ROLL_POPOVER_ID } from "./roll-popover/+page.svelte";
     import AnnounceWatcher from "$lib/announce-watcher.svelte";
     import InitiativeWatcher from "$lib/initiative-watcher.svelte";
+    import RangeFinder from "$lib/range-finder.svelte";
 
     const obr = getObr();
 
@@ -29,3 +30,4 @@
  <AnnounceWatcher />
  <CritWatcher popupDelay={5000} />
  <InitiativeWatcher />
+ <RangeFinder />
