@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { createPlayerDiceTheme, DEFAULT_THEME } from './dice-texture';
+import { createPlayerDiceTheme, DEFAULT_THEME, getNormalMapForDie } from './dice-texture';
 
 describe('dice theme generator', () => {
     it('returns default theme when no player info provided', () => {
@@ -22,5 +22,14 @@ describe('dice theme generator', () => {
         const theme = createPlayerDiceTheme('player-123', '#ff0000');
         expect(theme.backgroundColor).toContain('hsl(0');
         expect(theme.textColor).toBe('#ffffff');
+    });
+
+    it('generates and memoizes a procedural normal map for dice', () => {
+        const d6Values = [1, 2, 3, 4, 5, 6];
+        const normal1 = getNormalMapForDie(6, d6Values);
+        const normal2 = getNormalMapForDie(6, d6Values);
+
+        expect(normal1).toBeDefined();
+        expect(normal1).toBe(normal2); // verified memoized
     });
 });

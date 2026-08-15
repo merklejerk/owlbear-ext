@@ -9,7 +9,7 @@
     import { onMount, onDestroy } from 'svelte';
     import * as THREE from 'three';
     import { getDieDefinition, isSupportedDieSize, type DieDefinition } from './dice-geometries';
-    import { getTextureForDie, DEFAULT_THEME, type DiceTheme } from './dice-texture';
+    import { getTextureForDie, getNormalMapForDie, DEFAULT_THEME, type DiceTheme } from './dice-texture';
     import { generateMultiDiceTrajectories, type DiceTrajectory } from './dice-physics';
 
     export let dice: RollItem[] = [{ sides: 20, result: 20 }];
@@ -59,18 +59,18 @@
         renderer.shadowMap.type = THREE.PCFSoftShadowMap;
         container.appendChild(renderer.domElement);
 
-        // Lighting
-        const ambientLight = new THREE.AmbientLight(0xffffff, 1.1);
+        // Lighting - directional key with restrained ambient for rich normal map relief
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.55);
         scene.add(ambientLight);
 
-        const dirLight = new THREE.DirectionalLight(0xffffff, 2.2);
-        dirLight.position.set(6, 24, 10);
+        const dirLight = new THREE.DirectionalLight(0xffffff, 1.85);
+        dirLight.position.set(-8, 22, -10); // Angled key light creates crisp micro-shadows along normals
         dirLight.castShadow = true;
         dirLight.shadow.mapSize.width = 2048;
         dirLight.shadow.mapSize.height = 2048;
         dirLight.shadow.camera.near = 0.5;
-        dirLight.shadow.camera.far = 50;
-        const shadowExtent = 16;
+        dirLight.shadow.camera.far = 55;
+        const shadowExtent = 18;
         dirLight.shadow.camera.left = -shadowExtent;
         dirLight.shadow.camera.right = shadowExtent;
         dirLight.shadow.camera.top = shadowExtent;
@@ -79,8 +79,8 @@
         dirLight.shadow.radius = 2.5;
         scene.add(dirLight);
 
-        const fillLight = new THREE.DirectionalLight(0x99aacc, 0.5);
-        fillLight.position.set(-8, 12, -6);
+        const fillLight = new THREE.DirectionalLight(0xaac0e8, 0.45);
+        fillLight.position.set(12, 14, 12);
         scene.add(fillLight);
 
         // Transparent tabletop shadow receiver (casts soft shadows onto map)
@@ -134,11 +134,14 @@
             const item = dice[i];
             const def = multiItems[i].die;
             const texture = getTextureForDie(item.sides, def.faceValues, theme);
+            const normalMap = getNormalMapForDie(item.sides, def.faceValues);
 
             const mat = new THREE.MeshStandardMaterial({
                 map: texture,
-                roughness: 0.16,
-                metalness: 0.10,
+                normalMap,
+                normalScale: new THREE.Vector2(0.85, 0.85),
+                roughness: 0.28,
+                metalness: 0.04,
             });
 
             const mesh = new THREE.Mesh(def.geometry, mat);

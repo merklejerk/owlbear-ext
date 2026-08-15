@@ -16,8 +16,9 @@ export const DEFAULT_THEME: DiceTheme = {
     fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
 };
 
-// Texture cache to prevent redundant procedural canvas regeneration
+// Texture caches to prevent redundant procedural canvas regeneration
 const textureAtlasCache = new Map<string, THREE.CanvasTexture>();
+const normalMapAtlasCache = new Map<number, THREE.CanvasTexture>();
 
 /**
  * Creates a deterministic, polished dice theme based on player ID or OBR player color.
@@ -69,7 +70,7 @@ function parseHueFromHsl(hslStr: string, fallback: number = 260): number {
     return match ? parseInt(match[1], 10) : fallback;
 }
 
-// Deterministic gradient noise table
+// Deterministic permutation table for noise
 const PERM = new Uint8Array(512);
 const GRAD = [
     [1, 1], [-1, 1], [1, -1], [-1, -1],
@@ -127,6 +128,39 @@ function fbmTurbulence(x: number, y: number): number {
     return value;
 }
 
+/**
+ * Generates distinct micro-pits and porous cavities characteristic of tumbled/worn marble stone.
+ */
+function stonePittingNoise(x: number, y: number, seed: number): number {
+    const scale = 3.6;
+    const gx = Math.floor(x * scale);
+    const gy = Math.floor(y * scale);
+    let minD = 1.0;
+
+    for (let ox = -1; ox <= 1; ox++) {
+        for (let oy = -1; oy <= 1; oy++) {
+            const cx = gx + ox;
+            const cy = gy + oy;
+            const h = PERM[(PERM[(cx + seed) & 255] + (cy + seed * 7)) & 255];
+            // ~45% of cells contain a pit
+            if ((h & 7) > 3) continue;
+
+            const jx = cx + ((h & 15) / 15);
+            const jy = cy + (((h >> 4) & 15) / 15);
+            const dx = x * scale - jx;
+            const dy = y * scale - jy;
+            const d = Math.hypot(dx, dy);
+            if (d < minD) minD = d;
+        }
+    }
+
+    if (minD < 0.28) {
+        const pitProfile = Math.pow(1 - minD / 0.28, 1.8);
+        return -pitProfile * 45; // Crisp concave pit indentation
+    }
+    return 0;
+}
+
 function hslToRgb(h: number, s: number, l: number): [number, number, number] {
     h = (h % 360) / 360;
     s = s / 100;
@@ -167,6 +201,10 @@ export function createDiceTextureAtlas(
     theme: DiceTheme = DEFAULT_THEME,
     cellSize: number = 256,
 ): THREE.CanvasTexture {
+    if (typeof document === 'undefined') {
+        return new THREE.CanvasTexture({} as HTMLCanvasElement);
+    }
+
     const canvas = document.createElement('canvas');
     canvas.width = cols * cellSize;
     canvas.height = rows * cellSize;
@@ -305,6 +343,219 @@ export function createDiceTextureAtlas(
     texture.minFilter = THREE.LinearMipmapLinearFilter;
     texture.magFilter = THREE.LinearFilter;
     return texture;
+}
+
+/**
+ * Procedurally generates a tangent-space normal map atlas featuring authentic tiny worn stone pits,
+ * random tumbling hairline scratches, and engraved numeral bevels.
+ */
+export function createDiceNormalMapAtlas(
+    faceValues: number[],
+    cols: number,
+    rows: number,
+    cellSize: number = 256,
+): THREE.CanvasTexture {
+    if (typeof document === 'undefined') {
+        return new THREE.CanvasTexture({} as HTMLCanvasElement);
+    }
+
+    const width = cols * cellSize;
+    const height = rows * cellSize;
+
+    // Step 1: Render heightmap with worn stone micro-pits and engraved numeral bevels
+    const hCanvas = document.createElement('canvas');
+    hCanvas.width = width;
+    hCanvas.height = height;
+    const hCtx = hCanvas.getContext('2d');
+    if (!hCtx) {
+        throw new Error('Failed to create heightmap canvas context');
+    }
+
+    // Neutral base height = 128
+    hCtx.fillStyle = '#808080';
+    hCtx.fillRect(0, 0, width, height);
+
+    // Step 1a: Synthesize stone micro-pits on pixel heightmap
+    for (let f = 0; f < faceValues.length; f++) {
+        const col = f % cols;
+        const row = Math.floor(f / cols);
+        const startX = col * cellSize;
+        const startY = row * cellSize;
+        const seedOffset = f * 23.3;
+
+        const cellHImg = hCtx.createImageData(cellSize, cellSize);
+        const cData = cellHImg.data;
+
+        for (let py = 0; py < cellSize; py++) {
+            const ny = (py - cellSize / 2) / (cellSize * 0.5);
+            for (let px = 0; px < cellSize; px++) {
+                const nx = (px - cellSize / 2) / (cellSize * 0.5);
+
+                const u = nx * 4.5 + seedOffset;
+                const v = ny * 4.5 + seedOffset;
+
+                // Micro-pits
+                const pit = stonePittingNoise(u, v, f * 17);
+
+                const baseH = 128 + pit;
+                const idx = (py * cellSize + px) * 4;
+                cData[idx] = Math.min(255, Math.max(0, baseH));
+                cData[idx + 1] = Math.min(255, Math.max(0, baseH));
+                cData[idx + 2] = Math.min(255, Math.max(0, baseH));
+                cData[idx + 3] = 255;
+            }
+        }
+        hCtx.putImageData(cellHImg, startX, startY);
+
+        // Step 1b: Draw fine tumbling hairline scratches across this face cell
+        hCtx.save();
+        hCtx.lineCap = 'round';
+        for (let s = 0; s < 22; s++) {
+            const scratchX = startX + 20 + ((s * 41 + f * 17) % (cellSize - 40));
+            const scratchY = startY + 20 + ((s * 59 + f * 31) % (cellSize - 40));
+            const angle = ((s * 1.43 + f * 2.71) % (Math.PI * 2));
+            const len = 10 + ((s * 13 + f * 9) % 32);
+            const isDeep = (s % 5 === 0);
+
+            hCtx.beginPath();
+            hCtx.moveTo(scratchX, scratchY);
+            hCtx.lineTo(scratchX + Math.cos(angle) * len, scratchY + Math.sin(angle) * len);
+            hCtx.lineWidth = isDeep ? 2.4 : 1.4;
+            hCtx.strokeStyle = isDeep ? 'rgba(20, 20, 20, 0.80)' : 'rgba(35, 35, 35, 0.60)';
+            hCtx.stroke();
+        }
+        hCtx.restore();
+    }
+
+    // Step 1c: Engrave recessed numerals into the heightmap
+    hCtx.textAlign = 'center';
+    hCtx.textBaseline = 'middle';
+
+    for (let f = 0; f < faceValues.length; f++) {
+        const val = faceValues[f];
+        const col = f % cols;
+        const row = Math.floor(f / cols);
+        const centerX = col * cellSize + cellSize / 2;
+        const centerY = row * cellSize + cellSize / 2;
+
+        const text = val.toString();
+        const fontSize = Math.floor(cellSize * (text.length > 2 ? 0.36 : 0.46));
+        hCtx.font = `900 ${fontSize}px Inter, sans-serif`;
+
+        // Engraved text groove with smooth bevel in heightmap
+        hCtx.save();
+        hCtx.lineJoin = 'round';
+        hCtx.lineWidth = Math.max(5, fontSize * 0.12);
+        hCtx.strokeStyle = 'rgba(15, 15, 15, 0.90)';
+        hCtx.strokeText(text, centerX, centerY + 1);
+
+        hCtx.fillStyle = 'rgba(25, 25, 25, 0.95)';
+        hCtx.fillText(text, centerX, centerY + 1);
+        hCtx.restore();
+
+        if (val === 6 || val === 9) {
+            const underlineWidth = fontSize * 0.42;
+            const underlineHeight = Math.max(4, fontSize * 0.10);
+            const underlineY = centerY + fontSize * 0.36;
+            const underlineX = centerX - underlineWidth / 2;
+            hCtx.fillStyle = 'rgba(25, 25, 25, 0.95)';
+            hCtx.fillRect(underlineX - 2, underlineY, underlineWidth + 4, underlineHeight + 2);
+        }
+    }
+
+    const hData = hCtx.getImageData(0, 0, width, height).data;
+
+    // Step 2: Convert heightmap into tangent-space normal map via Sobel filter
+    const nCanvas = document.createElement('canvas');
+    nCanvas.width = width;
+    nCanvas.height = height;
+    const nCtx = nCanvas.getContext('2d')!;
+    const nImgData = nCtx.createImageData(width, height);
+    const nData = nImgData.data;
+
+    const normalStrength = 3.6;
+
+    for (let y = 0; y < height; y++) {
+        const yAbove = Math.max(0, y - 1);
+        const yBelow = Math.min(height - 1, y + 1);
+
+        for (let x = 0; x < width; x++) {
+            const xLeft = Math.max(0, x - 1);
+            const xRight = Math.min(width - 1, x + 1);
+
+            // Read height from continuous heightmap
+            const hL = hData[(y * width + xLeft) * 4] / 255;
+            const hR = hData[(y * width + xRight) * 4] / 255;
+            const hU = hData[(yAbove * width + x) * 4] / 255;
+            const hD = hData[(yBelow * width + x) * 4] / 255;
+
+            // Central difference gradient
+            const dx = (hR - hL) * normalStrength;
+            const dy = (hD - hU) * normalStrength;
+
+            // Tangent space normal vector: (-dx, -dy, 1) normalized
+            let nx = -dx;
+            let ny = -dy;
+            let nz = 1.0;
+            const len = Math.sqrt(nx * nx + ny * ny + nz * nz);
+            nx /= len;
+            ny /= len;
+            nz /= len;
+
+            const idx = (y * width + x) * 4;
+            nData[idx] = Math.round((nx * 0.5 + 0.5) * 255);
+            nData[idx + 1] = Math.round((ny * 0.5 + 0.5) * 255);
+            nData[idx + 2] = Math.round((nz * 0.5 + 0.5) * 255);
+            nData[idx + 3] = 255;
+        }
+    }
+
+    nCtx.putImageData(nImgData, 0, 0);
+
+    const normalTexture = new THREE.CanvasTexture(nCanvas);
+    normalTexture.generateMipmaps = true;
+    normalTexture.minFilter = THREE.LinearMipmapLinearFilter;
+    normalTexture.magFilter = THREE.LinearFilter;
+    return normalTexture;
+}
+
+/**
+ * Generates or retrieves cached normal map atlas for a given side count.
+ */
+export function getNormalMapForDie(
+    sides: number,
+    faceValues: number[],
+): THREE.CanvasTexture {
+    const cached = normalMapAtlasCache.get(sides);
+    if (cached) {
+        return cached;
+    }
+
+    let normalMap: THREE.CanvasTexture;
+    switch (sides) {
+        case 4:
+            normalMap = createDiceNormalMapAtlas(faceValues, 2, 2);
+            break;
+        case 6:
+            normalMap = createDiceNormalMapAtlas(faceValues, 3, 2);
+            break;
+        case 8:
+            normalMap = createDiceNormalMapAtlas(faceValues, 4, 2);
+            break;
+        case 10:
+            normalMap = createDiceNormalMapAtlas(faceValues, 5, 2);
+            break;
+        case 12:
+            normalMap = createDiceNormalMapAtlas(faceValues, 4, 3);
+            break;
+        case 20:
+        default:
+            normalMap = createDiceNormalMapAtlas(faceValues, 5, 4);
+            break;
+    }
+
+    normalMapAtlasCache.set(sides, normalMap);
+    return normalMap;
 }
 
 /**
