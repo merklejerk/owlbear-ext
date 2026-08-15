@@ -4,9 +4,11 @@ import {
     createD4Geometry,
     createD6Geometry,
     createD8Geometry,
+    createD10Geometry,
     createD12Geometry,
     createD20Geometry,
     getDieDefinition,
+    isSupportedDieSize,
 } from './dice-geometries';
 import { createCannonConvexPolyhedron } from './dice-cannon-shapes';
 
@@ -37,7 +39,7 @@ describe('dice geometries & face normals', () => {
         }
     });
 
-    it('creates valid D4, D8, D12 geometries', () => {
+    it('creates valid D4, D8, D10, D12 geometries', () => {
         const d4 = createD4Geometry(1.0);
         expect(d4.sides).toBe(4);
         expect(d4.faceNormals.size).toBe(4);
@@ -45,6 +47,10 @@ describe('dice geometries & face normals', () => {
         const d8 = createD8Geometry(1.0);
         expect(d8.sides).toBe(8);
         expect(d8.faceNormals.size).toBe(8);
+
+        const d10 = createD10Geometry(1.0);
+        expect(d10.sides).toBe(10);
+        expect(d10.faceNormals.size).toBe(10);
 
         const d12 = createD12Geometry(1.0);
         expect(d12.sides).toBe(12);
@@ -58,11 +64,21 @@ describe('dice geometries & face normals', () => {
         expect(cannonShape.faces.length).toBeGreaterThan(0);
     });
 
-    it('factory getDieDefinition returns requested dice specs', () => {
-        expect(getDieDefinition(20).sides).toBe(20);
-        expect(getDieDefinition(6).sides).toBe(6);
-        expect(getDieDefinition(8).sides).toBe(8);
-        expect(getDieDefinition(4).sides).toBe(4);
-        expect(getDieDefinition(12).sides).toBe(12);
+    it('factory getDieDefinition returns requested dice specs and null for unsupported sizes', () => {
+        expect(getDieDefinition(20)?.sides).toBe(20);
+        expect(getDieDefinition(12)?.sides).toBe(12);
+        expect(getDieDefinition(10)?.sides).toBe(10);
+        expect(getDieDefinition(8)?.sides).toBe(8);
+        expect(getDieDefinition(6)?.sides).toBe(6);
+        expect(getDieDefinition(4)?.sides).toBe(4);
+
+        // Unsupported sizes return null
+        expect(getDieDefinition(100)).toBeNull();
+        expect(getDieDefinition(3)).toBeNull();
+        expect(getDieDefinition(7)).toBeNull();
+
+        expect(isSupportedDieSize(20)).toBe(true);
+        expect(isSupportedDieSize(10)).toBe(true);
+        expect(isSupportedDieSize(100)).toBe(false);
     });
 });

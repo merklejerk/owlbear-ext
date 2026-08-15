@@ -1,0 +1,26 @@
+import { describe, it, expect } from 'vitest';
+import { createPlayerDiceTheme, DEFAULT_THEME } from './dice-texture';
+
+describe('dice theme generator', () => {
+    it('returns default theme when no player info provided', () => {
+        expect(createPlayerDiceTheme()).toEqual(DEFAULT_THEME);
+        expect(createPlayerDiceTheme(null, null)).toEqual(DEFAULT_THEME);
+    });
+
+    it('generates a deterministic theme from player ID', () => {
+        const theme1 = createPlayerDiceTheme('player-abc');
+        const theme2 = createPlayerDiceTheme('player-abc');
+        const theme3 = createPlayerDiceTheme('player-xyz');
+
+        expect(theme1).toEqual(theme2);
+        expect(theme1.backgroundColor).toContain('hsl(');
+        expect(theme1.textColor).toContain('hsl(');
+        expect(theme1.backgroundColor).not.toEqual(theme3.backgroundColor);
+    });
+
+    it('generates a theme from player hex color', () => {
+        const theme = createPlayerDiceTheme('player-123', '#ff0000');
+        expect(theme.backgroundColor).toContain('hsl(0');
+        expect(theme.textColor).toContain('hsl(0');
+    });
+});

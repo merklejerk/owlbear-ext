@@ -7,10 +7,15 @@
     import { page } from "$app/stores";
     import { getObr } from "$lib/obr-host.svelte";
     import DiceCanvas, { type RollItem } from "$lib/dice/dice-canvas.svelte";
+    import { createPlayerDiceTheme } from "$lib/dice/dice-texture";
     import { fade } from "svelte/transition";
 
     const obr = getObr();
     const rawDiceParam = $page.url.searchParams.get('dice') ?? '20:20';
+    const playerParam = $page.url.searchParams.get('player');
+    const colorParam = $page.url.searchParams.get('color');
+
+    const playerTheme = createPlayerDiceTheme(playerParam, colorParam);
 
     function parseDiceParam(param: string): RollItem[] {
         try {
@@ -69,6 +74,6 @@
     role="button"
     tabindex="-1"
     >
-    <DiceCanvas dice={diceList} onComplete={handleComplete} />
+    <DiceCanvas dice={diceList} theme={playerTheme} onComplete={handleComplete} />
 </div>
 {/if}

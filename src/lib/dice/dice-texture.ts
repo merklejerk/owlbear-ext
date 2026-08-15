@@ -15,6 +15,53 @@ export const DEFAULT_THEME: DiceTheme = {
 };
 
 /**
+ * Creates a deterministic, polished dice theme based on player ID or OBR player color.
+ */
+export function createPlayerDiceTheme(playerId?: string | null, playerColor?: string | null): DiceTheme {
+    if (playerColor && /^#[0-9a-fA-F]{6}$/.test(playerColor)) {
+        const r = parseInt(playerColor.slice(1, 3), 16) / 255;
+        const g = parseInt(playerColor.slice(3, 5), 16) / 255;
+        const b = parseInt(playerColor.slice(5, 7), 16) / 255;
+
+        const max = Math.max(r, g, b);
+        const min = Math.min(r, g, b);
+        let h = 0;
+
+        if (max !== min) {
+            const d = max - min;
+            switch (max) {
+                case r: h = (g - b) / d + (g < b ? 6 : 0); break;
+                case g: h = (b - r) / d + 2; break;
+                case b: h = (r - g) / d + 4; break;
+            }
+            h = Math.round(h * 60);
+        }
+
+        return {
+            backgroundColor: `hsl(${h}, 55%, 20%)`,
+            textColor: `hsl(${h}, 20%, 96%)`,
+            borderColor: `hsl(${h}, 65%, 40%)`,
+        };
+    }
+
+    if (!playerId) return DEFAULT_THEME;
+
+    // Hash playerId to a vibrant hue
+    let hash = 0;
+    for (let i = 0; i < playerId.length; i++) {
+        hash = (hash << 5) - hash + playerId.charCodeAt(i);
+        hash |= 0;
+    }
+    const hue = Math.abs(hash) % 360;
+
+    return {
+        backgroundColor: `hsl(${hue}, 55%, 20%)`,
+        textColor: `hsl(${hue}, 20%, 96%)`,
+        borderColor: `hsl(${hue}, 65%, 40%)`,
+    };
+}
+
+/**
  * Procedurally generates a 2D canvas texture atlas with numbered cells for die faces.
  */
 export function createDiceTextureAtlas(
@@ -92,6 +139,8 @@ export function getTextureForDie(
             return createDiceTextureAtlas(faceValues, 3, 2, theme);
         case 8:
             return createDiceTextureAtlas(faceValues, 4, 2, theme);
+        case 10:
+            return createDiceTextureAtlas(faceValues, 5, 2, theme);
         case 12:
             return createDiceTextureAtlas(faceValues, 4, 3, theme);
         case 20:

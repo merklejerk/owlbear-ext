@@ -8,9 +8,9 @@
 <script lang="ts">
     import { onMount, onDestroy } from 'svelte';
     import * as THREE from 'three';
-    import { getDieDefinition, type DieDefinition } from './dice-geometries';
+    import { getDieDefinition, isSupportedDieSize, type DieDefinition } from './dice-geometries';
     import { getTextureForDie, DEFAULT_THEME, type DiceTheme } from './dice-texture';
-    import { generateTimeReversalTrajectory, type DiceTrajectory } from './dice-physics';
+    import { generateMultiDiceTrajectories, type DiceTrajectory } from './dice-physics';
 
     export let dice: RollItem[] = [{ sides: 20, result: 20 }];
     export let theme: DiceTheme = DEFAULT_THEME;
@@ -28,12 +28,22 @@
     onMount(() => {
         if (!container) return;
 
+        // Filter out unsupported dice before rendering or simulating
+        const supportedDice = dice.filter(d => isSupportedDieSize(d.sides));
+        const count = supportedDice.length;
+        if (count === 0) {
+            onComplete();
+            return;
+        }
+
         const width = container.clientWidth || window.innerWidth;
         const height = container.clientHeight || window.innerHeight;
+        const aspect = width / height;
 
         // Scene & Transparent Renderer
         const scene = new THREE.Scene();
-        const camera = new THREE.PerspectiveCamera(38, width / height, 0.1, 100);
+        const fov = 38;
+        const camera = new THREE.PerspectiveCamera(fov, aspect, 0.1, 100);
         camera.position.set(0, 18, 3.5);
         camera.lookAt(0, 0, 0);
 
@@ -59,44 +69,45 @@
         fillLight.position.set(-8, 12, -6);
         scene.add(fillLight);
 
-        // Build dice and generate trajectories across full viewport
+        // Compute die radius dynamically so diameter is ~15% of viewport's minimum dimension
+        const fovRad = (fov * Math.PI) / 180;
+        const visibleHeightAtTable = 2 * 18 * Math.tan(fovRad / 2);
+        const visibleMinWorld = visibleHeightAtTable * Math.min(1, aspect);
+        const targetDiameterPercent = 0.15; // 15% of viewport min dimension
+        const baseRadius = (visibleMinWorld * targetDiameterPercent) / 2;
+
+        // Prepare multi-dice specifications with central cluster placement
+        const clusterRadius = count === 1 ? 0 : Math.min(visibleMinWorld * 0.22, baseRadius * (1.2 + count * 0.35));
+        const multiItems = supportedDice.map((item, idx) => {
+            const def = getDieDefinition(item.sides, baseRadius)!;
+            let restX = 0;
+            let restZ = 0;
+            if (count === 1) {
+                restX = (Math.random() - 0.5) * (baseRadius * 0.5);
+                restZ = (Math.random() - 0.5) * (baseRadius * 0.4);
+            } else {
+                const angle = (idx / count) * Math.PI * 2 + (Math.random() - 0.5) * 0.3;
+                const r = clusterRadius * (0.85 + Math.random() * 0.3);
+                restX = Math.cos(angle) * r;
+                restZ = Math.sin(angle) * (r * 0.75);
+            }
+            return {
+                die: def,
+                targetResult: item.result,
+                restingPosition: { x: restX, y: def.radius, z: restZ },
+            };
+        });
+
+        // Generate shared physics simulation trajectories with die-to-die collisions
+        const trajectories = generateMultiDiceTrajectories({
+            items: multiItems,
+            durationSeconds: 1.3,
+        });
+
         const activeDice: ActiveDie[] = [];
-        const count = dice.length;
-
-        // Calculate visible floor bounds based on camera aspect
-        const aspect = width / height;
-        const boundX = Math.min(8.0, 4.5 * Math.max(1, aspect));
-        const boundZ = 3.5;
-        const minDist = 2.8;
-
-        const positions: Array<{ x: number; z: number }> = [];
-        for (let i = 0; i < count; i++) {
-            let placed = false;
-            for (let attempts = 0; attempts < 60 && !placed; attempts++) {
-                const rx = (Math.random() - 0.5) * boundX * 1.8;
-                const rz = (Math.random() - 0.5) * boundZ * 1.8;
-                const tooClose = positions.some(p => {
-                    const dx = p.x - rx;
-                    const dz = p.z - rz;
-                    return Math.sqrt(dx * dx + dz * dz) < minDist;
-                });
-                if (!tooClose) {
-                    positions.push({ x: rx, z: rz });
-                    placed = true;
-                }
-            }
-            if (!placed) {
-                const angle = (i / Math.max(1, count)) * Math.PI * 2;
-                positions.push({
-                    x: Math.cos(angle) * (boundX * 0.5),
-                    z: Math.sin(angle) * (boundZ * 0.5),
-                });
-            }
-        }
-
         for (let i = 0; i < count; i++) {
             const item = dice[i];
-            const def = getDieDefinition(item.sides, 1.2);
+            const def = multiItems[i].die;
             const texture = getTextureForDie(item.sides, def.faceValues, theme);
 
             const mat = new THREE.MeshStandardMaterial({
@@ -108,28 +119,17 @@
             const mesh = new THREE.Mesh(def.geometry, mat);
             scene.add(mesh);
 
-            const restPos = positions[i];
-            const randomThrowAngle = Math.random() * Math.PI * 2;
-
-            const trajectory = generateTimeReversalTrajectory({
-                die: def,
-                targetResult: item.result,
-                restingPosition: { x: restPos.x, y: def.radius, z: restPos.z },
-                throwAngleRadians: randomThrowAngle,
-                durationSeconds: 1.15 + Math.random() * 0.2,
-            });
-
             activeDice.push({
                 mesh,
                 definition: def,
-                trajectory,
+                trajectory: trajectories[i],
             });
         }
 
         // Animation playback loop
         const startTime = performance.now();
         const maxDuration = Math.max(...activeDice.map(d => d.trajectory.duration));
-        const holdDuration = 0.4; // Stay at rest for 0.4s
+        const holdDuration = 1.8; // Stay at rest for 1.8s so players can read the result
         let completed = false;
 
         const pA = new THREE.Vector3();
