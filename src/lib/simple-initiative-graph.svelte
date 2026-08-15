@@ -25,7 +25,7 @@
     export let empty = true;
     let roundCount = 0;
     let editingId: string | null = null;
-    let editDraftValue = '';
+    let editDraftValue: string | number = '';
     const entryElems = new Map<string, HTMLElement>();
     
     $: empty = sortedIds.length === 0;
@@ -231,10 +231,11 @@
     async function submitInitiative(id: string) {
         if (editingId !== id) return;
         const targetId = editingId;
-        const raw = editDraftValue.trim();
+        const draft = editDraftValue;
         editingId = null;
         editDraftValue = '';
 
+        const raw = `${draft ?? ''}`.trim();
         const n = Number(raw || '0');
         if (!isNaN(n)) {
             if (initiativesById[targetId]) {
@@ -450,7 +451,10 @@
                         use:initializeEditor
                         on:blur={() => submitInitiative(id)}
                         on:keydown={(e) => {
-                            if (e.code === 'Escape') {
+                            if (e.key === 'Enter') {
+                                e.preventDefault();
+                                submitInitiative(id);
+                            } else if (e.key === 'Escape' || e.code === 'Escape') {
                                 e.preventDefault();
                                 cancelEditingInitiative(id);
                             }
