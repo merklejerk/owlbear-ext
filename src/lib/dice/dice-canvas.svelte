@@ -112,8 +112,8 @@
 
             const mat = new THREE.MeshStandardMaterial({
                 map: texture,
-                roughness: 0.25,
-                metalness: 0.15,
+                roughness: 0.16,
+                metalness: 0.10,
             });
 
             const mesh = new THREE.Mesh(def.geometry, mat);
