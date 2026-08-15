@@ -3,17 +3,29 @@ Rolls {
         = Roll? (#("," | " ") Roll)*
     
     Roll
-    	= ArithmeticRoll | MinMaxRoll | advantageRoll | SignedRoll | diceRoll | LiteralRoll
+    	= ArithmeticRoll
+        | SignedRoll
+        | PrimaryRoll
+    
+    ArithmeticRoll
+    	= Roll operator PrimaryRoll
+        
+    SignedRoll
+    	= operator PrimaryRoll
+        
+    PrimaryRoll
+        = MinMaxRoll
+        | advantageRoll
+        | diceRoll
+        | LiteralRoll
+        | ParenRoll
+
+    ParenRoll
+        = "(" Roll ")"
     
     MinMaxRoll
     	= (caseInsensitive<"min"> | caseInsensitive<"max">) "(" Rolls ")"
     
-    ArithmeticRoll
-    	= Roll operator Roll
-        
-    SignedRoll
-    	= operator Roll
-        
     LiteralRoll
     	= integer
 

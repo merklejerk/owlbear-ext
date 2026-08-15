@@ -150,23 +150,6 @@ export function createBinaryRollChain(
     };
 }
 
-export function normalizeArithmetic(
-    roll: Roll,
-    parentMode: BinaryRollMode = BinaryRollMode.ADD,
-): Roll {
-    if (isArithmeticRoll(roll)) {
-        roll.rolls = roll.rolls.map(
-            r => normalizeArithmetic(r, roll.mode),
-        ) as [Roll,Roll];
-        if (parentMode === BinaryRollMode.SUB) {
-            roll.mode = roll.mode === BinaryRollMode.ADD
-                ? BinaryRollMode.SUB
-                : BinaryRollMode.ADD;
-        }
-    }
-    return roll;
-}
-
 export function parseRollSpec(spec: string): Roll[] {
     const sem = ohm.createSemantics();
     sem.addAttribute('integer',
@@ -221,6 +204,9 @@ export function parseRollSpec(spec: string): Roll[] {
                     rolls.rolls,
                 );
             },
+            ParenRoll(_lParen, roll, _rParen): Roll {
+                return roll.roll;
+            },
             ArithmeticRoll(roll1, op, roll2): BinaryRoll {
                 return {
                     mode: op.operator === '+' ? BinaryRollMode.ADD : BinaryRollMode.SUB,
@@ -243,10 +229,8 @@ export function parseRollSpec(spec: string): Roll[] {
     if (!r.succeeded()) {
         throw new ParseRollError(r.shortMessage ?? 'Failed to parse roll spec.');
     }
-    // return sem(r).rolls;
     let rolls = sem(r).rolls as Roll[];
     rolls = rolls.map(r => simplifyRoll(r));
-    rolls = rolls.map(r => normalizeArithmetic(r));
     return rolls;
 }
 
