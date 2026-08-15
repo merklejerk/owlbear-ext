@@ -224,7 +224,7 @@
 
 
     $: {
-        if (clientWidth && clientWidth !== window.window.innerWidth) {
+        if (clientWidth && clientWidth !== window.innerWidth) {
             obr.action.setWidth(clientWidth);
         }
     }

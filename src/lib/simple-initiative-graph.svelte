@@ -29,33 +29,46 @@
     let roundCount = 0;
     let isEditing = false;
     
-    $: {
-        empty = sortedIds.length === 0;
-        if (empty) roundCount = 0;
-    }
-
-    $: (async (roundCount: number) => {
-        if (await obr.scene.isReady()) {
-            const metadata = await obr.scene.getMetadata();
-            if (metadata[ROUND_METADATA_ID] !== roundCount) {
-                await obr.scene.setMetadata({
-                    [ROUND_METADATA_ID]: roundCount,
-                });
-            }
-        }
-    })(roundCount);
+    $: empty = sortedIds.length === 0;
 
     $: isEditing = Object.values(initiativesById).some(ini => ini.editContent !== undefined);
 
     onMount(() => {
+        let unsubscribers: Array<() => void> = [];
+
+        const teardownScene = () => {
+            for (const unsub of unsubscribers) {
+                unsub();
+            }
+            unsubscribers = [];
+        };
+
         const setupScene = () => {
+            teardownScene();
             obr.scene.getMetadata().then(processSceneMetadata);
             obr.scene.items.getItems().then(processSceneItems);
-            obr.scene.items.onChange(items => processSceneItems(items));
-            obr.scene.onMetadataChange(processSceneMetadata);
+            unsubscribers.push(
+                obr.scene.items.onChange(items => processSceneItems(items)),
+                obr.scene.onMetadataChange(processSceneMetadata),
+            );
         };
-        obr.scene.onReadyChange(rdy => { if (rdy) setupScene(); });
-        obr.scene.isReady().then(rdy => { if (rdy) setupScene(); })
+
+        const unsubReady = obr.scene.onReadyChange(rdy => {
+            if (rdy) {
+                setupScene();
+            } else {
+                teardownScene();
+            }
+        });
+
+        obr.scene.isReady().then(rdy => {
+            if (rdy) setupScene();
+        });
+
+        return () => {
+            teardownScene();
+            unsubReady();
+        };
     });
 
     function wrapInitiativeIndex(idx: number): number {
@@ -145,21 +158,29 @@
         return sortedIds.findIndex(id => initiativesById[id].active);
     }
 
+    async function setSceneRoundCount(newRound: number): Promise<void> {
+        if (await obr.scene.isReady()) {
+            await obr.scene.setMetadata({
+                [ROUND_METADATA_ID]: Math.max(0, newRound),
+            });
+        }
+    }
+
     async function goToNextTurn() {
         if (sortedIds.length === 0) return;
         const currentIdx = wrapInitiativeIndex(findActiveIdx());
-        updateActive(currentIdx + 1);
+        await updateActive(currentIdx + 1);
         if (currentIdx === sortedIds.length - 1) {
-            ++roundCount;
+            await setSceneRoundCount(roundCount + 1);
         }
     }
     
     async function goToPrevTurn() {
         if (sortedIds.length === 0) return;
         const currentIdx = wrapInitiativeIndex(findActiveIdx());
-        updateActive(currentIdx - 1);
+        await updateActive(currentIdx - 1);
         if (currentIdx === 0 && roundCount > 0) {
-            --roundCount;
+            await setSceneRoundCount(roundCount - 1);
         }
     }
 
@@ -443,7 +464,7 @@
             </div>
             <div class="overlay">
                 <IconButton
-                    on:click={() => roundCount = 0}
+                    on:click={() => setSceneRoundCount(0)}
                     title="Reset" iconPath="undo.svg"
                     noAnimate
                     fillContainer
