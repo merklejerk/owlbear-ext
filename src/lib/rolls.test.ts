@@ -8,6 +8,7 @@ import {
     type DiceGroup,
     type BinaryRoll,
     ParseRollError,
+    extractDiceItems,
 } from './rolls';
 
 describe('rolls parser & evaluator', () => {
@@ -115,6 +116,21 @@ describe('rolls parser & evaluator', () => {
         it('throws ParseRollError on invalid syntax', () => {
             expect(() => parseRollSpec('invalid')).toThrow(ParseRollError);
             expect(() => parseRollSpec('d')).toThrow(ParseRollError);
+        });
+
+        it('extracts all individual dice items from complex roll trees', () => {
+            const die1: DiceGroup = { sides: 20, results: [15] };
+            const die2: DiceGroup = { sides: 6, results: [4, 6] };
+            const complexRoll: BinaryRoll = {
+                mode: BinaryRollMode.ADD,
+                rolls: [die1, die2],
+            };
+            const extracted = extractDiceItems(complexRoll);
+            expect(extracted).toEqual([
+                { sides: 20, result: 15 },
+                { sides: 6, result: 4 },
+                { sides: 6, result: 6 },
+            ]);
         });
     });
 });

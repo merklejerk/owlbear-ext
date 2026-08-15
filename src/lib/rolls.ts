@@ -249,3 +249,13 @@ export function cloneRoll(roll: Roll): Roll {
     }
     return roll;
 }
+
+export function extractDiceItems(roll: Roll): Array<{ sides: number; result: number }> {
+    if (isDiceGroup(roll)) {
+        return roll.results.map(r => ({ sides: roll.sides, result: r }));
+    }
+    if (isBinaryRoll(roll)) {
+        return roll.rolls.flatMap(r => extractDiceItems(r));
+    }
+    return [];
+}
