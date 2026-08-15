@@ -15,9 +15,6 @@
         initiative: number;
         name: string;
         active: boolean;
-        entryElem?: HTMLElement;
-        editContent?: string;
-        editElem?: HTMLElement;
     }
     
     const TRACKER_METADATA_ID = 'rodeo.owlbear.initiative-tracker/metadata';
@@ -27,11 +24,12 @@
     let sortedIds = [] as string[];
     export let empty = true;
     let roundCount = 0;
-    let isEditing = false;
+    let editingId: string | null = null;
+    let editDraftValue = '';
+    const entryElems = new Map<string, HTMLElement>();
     
     $: empty = sortedIds.length === 0;
-
-    $: isEditing = Object.values(initiativesById).some(ini => ini.editContent !== undefined);
+    $: isEditing = editingId !== null;
 
     onMount(() => {
         let unsubscribers: Array<() => void> = [];
@@ -89,21 +87,26 @@
                 if (a_.initiative === b_.initiative) {
                     return a.localeCompare(b);
                 }
-                return b_.initiative - a_.initiative
+                return b_.initiative - a_.initiative;
             });
     }
 
-    function initializeEntry(node: HTMLDivElement, id: string) {
-        const ini = initiativesById[id];
-        ini.entryElem = node; 
+    function initializeEntry(node: HTMLElement, id: string) {
+        entryElems.set(id, node);
+        return {
+            destroy() {
+                entryElems.delete(id);
+            },
+        };
     }
 
     function scrollToId(id: string) {
-        const ini = initiativesById[id];
-        if (!isEditing && ini.entryElem) {
-            const e = ini.entryElem;
-            const p = e.parentElement!;
-            const bounds = e.getBoundingClientRect();
+        if (isEditing) return;
+        const entryElem = entryElems.get(id);
+        if (entryElem) {
+            const p = entryElem.parentElement;
+            if (!p) return;
+            const bounds = entryElem.getBoundingClientRect();
             const scroll = {
                 top: p.scrollTop,
                 bottom: p.scrollTop + p.scrollHeight,
@@ -117,22 +120,28 @@
 
     async function processSceneItems(items: Item[]) {
         const trackedItems = items.filter(item => item.metadata[TRACKER_METADATA_ID]);
-        const oldActiveIdx = findActiveIdx();
-        const oldActiveId = sortedIds[oldActiveIdx];
-        initiativesById = Object.assign({},
-            ...trackedItems.map(item => ({
-                [item.id]: {
-                    ...initiativesById[item.id],
+        const oldActiveId = sortedIds[findActiveIdx()];
+
+        initiativesById = Object.fromEntries(
+            trackedItems.map(item => [
+                item.id,
+                {
                     initiative: Number((item.metadata[TRACKER_METADATA_ID] as TrackerMetadata)?.count) ?? 0,
                     active: !!(item.metadata[TRACKER_METADATA_ID] as TrackerMetadata).active,
                     name: (item as any).text?.plainText || item.name,
                 } satisfies Initiative,
-            })),
+            ]),
         );
         populateIds();
+
+        if (editingId && !initiativesById[editingId]) {
+            cancelEditingInitiative(editingId);
+        }
+
         let newActiveIdx = findActiveIdx();
         if (newActiveIdx === -1 && sortedIds.length) {
-            newActiveIdx = await updateActive(oldActiveIdx);
+            const fallbackIdx = oldActiveId ? sortedIds.indexOf(oldActiveId) : -1;
+            newActiveIdx = await updateActive(fallbackIdx !== -1 ? fallbackIdx : 0);
         }
         const activeId = sortedIds[findActiveIdx()];
         if (activeId && activeId !== oldActiveId) {
@@ -155,7 +164,7 @@
     }
 
     function findActiveIdx(): number {
-        return sortedIds.findIndex(id => initiativesById[id].active);
+        return sortedIds.findIndex(id => initiativesById[id]?.active);
     }
 
     async function setSceneRoundCount(newRound: number): Promise<void> {
@@ -201,12 +210,17 @@
     }
    
     function beginEditingInitiative(id: string) {
-        const item = initiativesById[id]; 
-        initiativesById[id].editContent = item.initiative.toString();
+        const item = initiativesById[id];
+        if (!item) return;
+        editingId = id;
+        editDraftValue = item.initiative.toString();
     }
 
     function cancelEditingInitiative(id: string) {
-        initiativesById[id].editContent = undefined;
+        if (editingId === id) {
+            editingId = null;
+            editDraftValue = '';
+        }
     }
 
     function initializeEditor(node: HTMLInputElement) {
@@ -214,22 +228,28 @@
         node.select();
     }
 
-    function submitInitiative(id: string) {
-        const ini = initiativesById[id];
-        const n = Number(ini.editContent || '0');
+    async function submitInitiative(id: string) {
+        if (editingId !== id) return;
+        const targetId = editingId;
+        const raw = editDraftValue.trim();
+        editingId = null;
+        editDraftValue = '';
+
+        const n = Number(raw || '0');
         if (!isNaN(n)) {
-            initiativesById[id].initiative = n;
-            cancelEditingInitiative(id);
-            obr.scene.items.updateItems(
-                [id],
+            if (initiativesById[targetId]) {
+                initiativesById[targetId].initiative = n;
+                populateIds();
+            }
+            await obr.scene.items.updateItems(
+                [targetId],
                 ([it]) => {
-                    const metadata = it.metadata?.[TRACKER_METADATA_ID] as TrackerMetadata | undefined;
+                    const metadata = it?.metadata?.[TRACKER_METADATA_ID] as TrackerMetadata | undefined;
                     if (metadata && Number(metadata.count) !== n) {
                         metadata.count = `${n}`;
                     }
                 },
             );
-            return;
         }
     }
 </script>
@@ -415,20 +435,18 @@
         <div
             class="entry"
             class:odd={i % 2 !== 0}
-            class:active={ini.active}
-            class:editTarget={isEditing && ini.editContent !== undefined}
+            class:active={ini?.active}
+            class:editTarget={editingId === id}
             use:initializeEntry={id}
-            title={`Initiative: ${ini.initiative}`}
+            title={`Initiative: ${ini?.initiative ?? 0}`}
             >
-            <span class="content">{ini.name}</span>
-            <div class="overlay"
-                >
-                {#if ini.editContent !== undefined}
+            <span class="content">{ini?.name ?? ''}</span>
+            <div class="overlay">
+                {#if editingId === id}
                 <form on:submit|preventDefault={() => submitInitiative(id)}>
                     <input
                         class="ordinal"
-                        bind:value={initiativesById[id].editContent}
-                        bind:this={initiativesById[id].editElem}
+                        bind:value={editDraftValue}
                         use:initializeEditor
                         on:blur={() => submitInitiative(id)}
                         on:keydown={(e) => {
@@ -447,7 +465,7 @@
                     class="ordinal"
                     on:click|preventDefault={() => beginEditingInitiative(id)}
                     >
-                    {ini.initiative}
+                    {ini?.initiative ?? 0}
                 </button>
                 {/if}
                 <div class="controls">
