@@ -117,6 +117,17 @@
             });
 
             const mesh = new THREE.Mesh(def.geometry, mat);
+
+            // Metallic gold facet edge trim
+            const edges = new THREE.EdgesGeometry(def.geometry, 15);
+            const lineMat = new THREE.LineBasicMaterial({
+                color: 0xf6d365,
+                transparent: true,
+                opacity: 0.85,
+            });
+            const edgeLines = new THREE.LineSegments(edges, lineMat);
+            mesh.add(edgeLines);
+
             scene.add(mesh);
 
             activeDice.push({
