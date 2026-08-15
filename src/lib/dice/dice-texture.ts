@@ -16,6 +16,9 @@ export const DEFAULT_THEME: DiceTheme = {
     fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
 };
 
+// Texture cache to prevent redundant procedural canvas regeneration
+const textureAtlasCache = new Map<string, THREE.CanvasTexture>();
+
 /**
  * Creates a deterministic, polished dice theme based on player ID or OBR player color.
  */
@@ -154,7 +157,7 @@ function hslToRgb(h: number, s: number, l: number): [number, number, number] {
 }
 
 /**
- * Procedurally generates a 2D canvas texture atlas with subtle, elegant marble resin
+ * Procedurally generates a 2D canvas texture atlas with subtle marble resin
  * and high-contrast engraved inlaid numerals.
  */
 export function createDiceTextureAtlas(
@@ -179,7 +182,16 @@ export function createDiceTextureAtlas(
     // Palette: Deep, saturated base tone + subtle translucent cloud + soft delicate vein
     const [rBase, gBase, bBase] = hslToRgb(baseHue, 65, 17);
     const [rMid, gMid, bMid] = hslToRgb(baseHue, 60, 24);
-    const [rVein, gVein, bVein] = hslToRgb((baseHue + 20) % 360, 45, 42); // subtle smoky vein (not blinding white)
+    const [rVein, gVein, bVein] = hslToRgb((baseHue + 20) % 360, 45, 42);
+
+    // Reuse low-res offscreen canvas for super fast noise generation (16x faster)
+    const noiseRes = 64;
+    const offscreen = document.createElement('canvas');
+    offscreen.width = noiseRes;
+    offscreen.height = noiseRes;
+    const offCtx = offscreen.getContext('2d')!;
+    const noiseImgData = offCtx.createImageData(noiseRes, noiseRes);
+    const data = noiseImgData.data;
 
     for (let f = 0; f < faceValues.length; f++) {
         const val = faceValues[f];
@@ -191,19 +203,16 @@ export function createDiceTextureAtlas(
         const centerX = startX + cellSize / 2;
         const centerY = startY + cellSize / 2;
 
-        // 1. Subtle, Deep Marble Resin Background
-        const imgData = ctx.createImageData(cellSize, cellSize);
-        const data = imgData.data;
-
+        // 1. Fast Noise Generation onto offscreen buffer
         const seedAngle = (f * 1.618) % (Math.PI * 2);
         const cosA = Math.cos(seedAngle);
         const sinA = Math.sin(seedAngle);
         const seedOffset = f * 13.7;
 
-        for (let py = 0; py < cellSize; py++) {
-            const ny = (py - cellSize / 2) / (cellSize * 0.5);
-            for (let px = 0; px < cellSize; px++) {
-                const nx = (px - cellSize / 2) / (cellSize * 0.5);
+        for (let py = 0; py < noiseRes; py++) {
+            const ny = (py - noiseRes / 2) / (noiseRes * 0.5);
+            for (let px = 0; px < noiseRes; px++) {
+                const nx = (px - noiseRes / 2) / (noiseRes * 0.5);
 
                 const rx = (nx * cosA - ny * sinA) * 2.2 + seedOffset;
                 const ry = (nx * sinA + ny * cosA) * 2.2 + seedOffset;
@@ -213,11 +222,9 @@ export function createDiceTextureAtlas(
                 const marbleSignal = Math.sin(rx * 1.8 + ry * 0.6 + 3.0 * turb);
                 const normMarble = (marbleSignal + 1) * 0.5;
 
-                // Soft vein curve
-                const vein = Math.pow(normMarble, 2.5) * 0.35; // delicate 35% max vein opacity
+                const vein = Math.pow(normMarble, 2.5) * 0.35;
                 const cloud = normMarble * 0.25;
 
-                // Facet edge shading
                 const distFromCenter = Math.sqrt(nx * nx + ny * ny);
                 const vignette = Math.max(0, 1 - Math.pow(distFromCenter * 0.9, 3.0));
 
@@ -225,12 +232,11 @@ export function createDiceTextureAtlas(
                 let g = gBase + (gMid - gBase) * cloud + (gVein - gMid) * vein;
                 let b = bBase + (bMid - bBase) * cloud + (bVein - bMid) * vein;
 
-                // Darken edges slightly for 3D bevel look
                 r = r * (0.60 + 0.40 * vignette);
                 g = g * (0.60 + 0.40 * vignette);
                 b = b * (0.60 + 0.40 * vignette);
 
-                const pIdx = (py * cellSize + px) * 4;
+                const pIdx = (py * noiseRes + px) * 4;
                 data[pIdx] = Math.min(255, Math.max(0, r));
                 data[pIdx + 1] = Math.min(255, Math.max(0, g));
                 data[pIdx + 2] = Math.min(255, Math.max(0, b));
@@ -238,7 +244,11 @@ export function createDiceTextureAtlas(
             }
         }
 
-        ctx.putImageData(imgData, startX, startY);
+        offCtx.putImageData(noiseImgData, 0, 0);
+
+        // Draw smoothly interpolated into the main canvas cell
+        ctx.imageSmoothingEnabled = true;
+        ctx.drawImage(offscreen, startX, startY, cellSize, cellSize);
 
         // 2. High-Contrast, Crisp Inlaid Numerals
         const text = val.toString();
@@ -247,7 +257,7 @@ export function createDiceTextureAtlas(
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
 
-        // Dark Engraved Trench Stroke (Guarantees 100% legibility on any surface)
+        // Dark Engraved Trench Stroke
         ctx.save();
         ctx.lineJoin = 'round';
         ctx.miterLimit = 2;
@@ -280,13 +290,11 @@ export function createDiceTextureAtlas(
             const underlineY = centerY + fontSize * 0.36;
             const underlineX = centerX - underlineWidth / 2;
 
-            // Trench outline
             ctx.save();
             ctx.fillStyle = 'rgba(0, 0, 0, 0.95)';
             ctx.fillRect(underlineX - 2, underlineY - 1, underlineWidth + 4, underlineHeight + 3);
             ctx.restore();
 
-            // Fill
             ctx.fillStyle = textGrad;
             ctx.fillRect(underlineX, underlineY, underlineWidth, underlineHeight);
         }
@@ -300,26 +308,42 @@ export function createDiceTextureAtlas(
 }
 
 /**
- * Generates appropriate texture atlas for a given side count.
+ * Generates or retrieves cached texture atlas for a given side count.
  */
 export function getTextureForDie(
     sides: number,
     faceValues: number[],
     theme: DiceTheme = DEFAULT_THEME,
 ): THREE.CanvasTexture {
+    const key = `${sides}_${theme.backgroundColor}_${theme.textColor}_${theme.fontFamily ?? ''}`;
+    const cached = textureAtlasCache.get(key);
+    if (cached) {
+        return cached;
+    }
+
+    let texture: THREE.CanvasTexture;
     switch (sides) {
         case 4:
-            return createDiceTextureAtlas(faceValues, 2, 2, theme);
+            texture = createDiceTextureAtlas(faceValues, 2, 2, theme);
+            break;
         case 6:
-            return createDiceTextureAtlas(faceValues, 3, 2, theme);
+            texture = createDiceTextureAtlas(faceValues, 3, 2, theme);
+            break;
         case 8:
-            return createDiceTextureAtlas(faceValues, 4, 2, theme);
+            texture = createDiceTextureAtlas(faceValues, 4, 2, theme);
+            break;
         case 10:
-            return createDiceTextureAtlas(faceValues, 5, 2, theme);
+            texture = createDiceTextureAtlas(faceValues, 5, 2, theme);
+            break;
         case 12:
-            return createDiceTextureAtlas(faceValues, 4, 3, theme);
+            texture = createDiceTextureAtlas(faceValues, 4, 3, theme);
+            break;
         case 20:
         default:
-            return createDiceTextureAtlas(faceValues, 5, 4, theme);
+            texture = createDiceTextureAtlas(faceValues, 5, 4, theme);
+            break;
     }
+
+    textureAtlasCache.set(key, texture);
+    return texture;
 }

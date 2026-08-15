@@ -55,19 +55,44 @@
         renderer.setSize(width, height);
         renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
         renderer.setClearColor(0x000000, 0);
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
         container.appendChild(renderer.domElement);
 
         // Lighting
-        const ambientLight = new THREE.AmbientLight(0xffffff, 1.3);
+        const ambientLight = new THREE.AmbientLight(0xffffff, 1.1);
         scene.add(ambientLight);
 
-        const dirLight = new THREE.DirectionalLight(0xffffff, 2.0);
-        dirLight.position.set(5, 22, 8);
+        const dirLight = new THREE.DirectionalLight(0xffffff, 2.2);
+        dirLight.position.set(6, 24, 10);
+        dirLight.castShadow = true;
+        dirLight.shadow.mapSize.width = 2048;
+        dirLight.shadow.mapSize.height = 2048;
+        dirLight.shadow.camera.near = 0.5;
+        dirLight.shadow.camera.far = 50;
+        const shadowExtent = 16;
+        dirLight.shadow.camera.left = -shadowExtent;
+        dirLight.shadow.camera.right = shadowExtent;
+        dirLight.shadow.camera.top = shadowExtent;
+        dirLight.shadow.camera.bottom = -shadowExtent;
+        dirLight.shadow.bias = -0.0003;
+        dirLight.shadow.radius = 2.5;
         scene.add(dirLight);
 
         const fillLight = new THREE.DirectionalLight(0x99aacc, 0.5);
         fillLight.position.set(-8, 12, -6);
         scene.add(fillLight);
+
+        // Transparent tabletop shadow receiver (casts soft shadows onto map)
+        const shadowPlaneGeo = new THREE.PlaneGeometry(80, 80);
+        const shadowPlaneMat = new THREE.ShadowMaterial({
+            opacity: 0.42,
+        });
+        const shadowPlane = new THREE.Mesh(shadowPlaneGeo, shadowPlaneMat);
+        shadowPlane.rotation.x = -Math.PI / 2;
+        shadowPlane.position.y = 0;
+        shadowPlane.receiveShadow = true;
+        scene.add(shadowPlane);
 
         // Compute die radius dynamically so diameter is ~15% of viewport's minimum dimension
         const fovRad = (fov * Math.PI) / 180;
@@ -117,6 +142,8 @@
             });
 
             const mesh = new THREE.Mesh(def.geometry, mat);
+            mesh.castShadow = true;
+            mesh.receiveShadow = true;
 
             // Metallic gold facet edge trim
             const edges = new THREE.EdgesGeometry(def.geometry, 15);

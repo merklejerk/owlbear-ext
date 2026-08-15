@@ -1,10 +1,18 @@
 import * as CANNON from 'cannon-es';
 import * as THREE from 'three';
 
+const shapeCache = new WeakMap<THREE.BufferGeometry, CANNON.ConvexPolyhedron>();
+
 /**
- * Converts a Three.js non-indexed BufferGeometry into a CANNON.ConvexPolyhedron shape.
+ * Converts a Three.js non-indexed BufferGeometry into a CANNON.ConvexPolyhedron shape,
+ * caching results to prevent repeated vertex reconstruction.
  */
 export function createCannonConvexPolyhedron(geometry: THREE.BufferGeometry): CANNON.ConvexPolyhedron {
+    const cached = shapeCache.get(geometry);
+    if (cached) {
+        return cached;
+    }
+
     const posAttr = geometry.attributes.position;
     const vertexMap = new Map<string, number>();
     const vertices: CANNON.Vec3[] = [];
@@ -31,8 +39,11 @@ export function createCannonConvexPolyhedron(geometry: THREE.BufferGeometry): CA
         faces.push(faceIndices);
     }
 
-    return new CANNON.ConvexPolyhedron({
+    const shape = new CANNON.ConvexPolyhedron({
         vertices,
         faces,
     });
+
+    shapeCache.set(geometry, shape);
+    return shape;
 }
