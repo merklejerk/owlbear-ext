@@ -27,7 +27,9 @@ const normalMapAtlasCache = new Map<number, THREE.CanvasTexture>();
 export function createPlayerDiceTheme(playerId?: string | null, playerColor?: string | null): DiceTheme {
     if (!playerId && !playerColor) return DEFAULT_THEME;
 
-    let hue = 265; // Default purple/indigo
+    let h = 265;
+    let s = 65;
+    let l = 18;
 
     if (playerColor && /^#[0-9a-fA-F]{6}$/.test(playerColor)) {
         const r = parseInt(playerColor.slice(1, 3), 16) / 255;
@@ -36,15 +38,31 @@ export function createPlayerDiceTheme(playerId?: string | null, playerColor?: st
 
         const max = Math.max(r, g, b);
         const min = Math.min(r, g, b);
+        const d = max - min;
+        const rawLightness = (max + min) / 2;
 
-        if (max !== min) {
-            const d = max - min;
+        if (d === 0) {
+            h = 0;
+            s = 0;
+            l = Math.round(rawLightness * 100);
+        } else {
+            const rawSat = rawLightness > 0.5 ? d / (2 - max - min) : d / (max + min);
             switch (max) {
-                case r: hue = (g - b) / d + (g < b ? 6 : 0); break;
-                case g: hue = (b - r) / d + 2; break;
-                case b: hue = (r - g) / d + 4; break;
+                case r: h = (g - b) / d + (g < b ? 6 : 0); break;
+                case g: h = (b - r) / d + 2; break;
+                case b: h = (r - g) / d + 4; break;
             }
-            hue = Math.round(hue * 60);
+            h = Math.round(h * 60);
+            s = Math.round(rawSat * 100);
+            l = Math.round(rawLightness * 100);
+        }
+
+        // Faithfully preserve user's chosen lightness and saturation
+        if (s < 5) {
+            s = 0;
+            l = Math.max(4, Math.min(95, l));
+        } else {
+            l = Math.max(6, Math.min(94, l));
         }
     } else if (playerId) {
         let hash = 0;
@@ -52,23 +70,32 @@ export function createPlayerDiceTheme(playerId?: string | null, playerColor?: st
             hash = (hash << 5) - hash + playerId.charCodeAt(i);
             hash |= 0;
         }
-        hue = Math.abs(hash) % 360;
+        h = Math.abs(hash) % 360;
+        s = 65;
+        l = 18;
     }
 
     return {
-        backgroundColor: `hsl(${hue}, 65%, 18%)`,
+        backgroundColor: `hsl(${h}, ${s}%, ${l}%)`,
         textColor: '#ffffff',
-        borderColor: `hsl(${hue}, 70%, 35%)`,
+        borderColor: `hsl(${h}, ${s}%, ${Math.min(90, Math.max(10, l > 50 ? l - 20 : l + 20))}%)`,
         accentColor: '#ffd700',
     };
 }
 
 /**
- * Extracts HSL components from a CSS HSL string or falls back.
+ * Extracts H, S, L components from a CSS HSL string.
  */
-function parseHueFromHsl(hslStr: string, fallback: number = 260): number {
-    const match = hslStr.match(/hsl\((\d+)/);
-    return match ? parseInt(match[1], 10) : fallback;
+function parseHsl(hslStr: string): { h: number; s: number; l: number } {
+    const match = hslStr.match(/hsl\((\d+),\s*(\d+)%?,\s*(\d+)%?\)/);
+    if (match) {
+        return {
+            h: parseInt(match[1], 10),
+            s: parseInt(match[2], 10),
+            l: parseInt(match[3], 10),
+        };
+    }
+    return { h: 265, s: 65, l: 18 };
 }
 
 // Deterministic permutation table for noise
@@ -223,9 +250,9 @@ function hslToRgb(h: number, s: number, l: number): [number, number, number] {
 }
 
 /**
- * Renders a crisp engraved numeral with drop shadow, border, and gradient fill.
+ * Renders channel-masked numerals: Green (G=255) for numeral fill, Blue (B=255) for trench stroke.
  */
-function drawFaceNumeral(
+function drawFaceNumeralMask(
     ctx: CanvasRenderingContext2D,
     text: string,
     x: number,
@@ -244,25 +271,17 @@ function drawFaceNumeral(
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
 
-    // Dark Engraved Trench Stroke
+    // Blue Channel: Engraved Trench Stroke (B = 255)
     ctx.save();
     ctx.lineJoin = 'round';
     ctx.miterLimit = 2;
-    ctx.lineWidth = Math.max(3, fontSize * 0.12);
-    ctx.strokeStyle = 'rgba(0, 0, 0, 0.95)';
-    ctx.shadowColor = 'rgba(0, 0, 0, 0.95)';
-    ctx.shadowBlur = 4;
-    ctx.shadowOffsetY = 2;
+    ctx.lineWidth = Math.max(4, fontSize * 0.14);
+    ctx.strokeStyle = 'rgb(0, 0, 255)';
     ctx.strokeText(text, 0, 1);
     ctx.restore();
 
-    // Inlaid Enamel/Gold Fill
-    const textGrad = ctx.createLinearGradient(0, -fontSize * 0.45, 0, fontSize * 0.45);
-    textGrad.addColorStop(0, '#ffffff');
-    textGrad.addColorStop(0.5, '#ffffff');
-    textGrad.addColorStop(1, '#f0ede0');
-
-    ctx.fillStyle = textGrad;
+    // Green Channel: Inlaid Enamel Numeral Fill (G = 255)
+    ctx.fillStyle = 'rgb(0, 255, 0)';
     ctx.fillText(text, 0, 0);
 
     if (showUnderline) {
@@ -272,25 +291,27 @@ function drawFaceNumeral(
         const underlineX = -underlineWidth / 2;
 
         ctx.save();
-        ctx.fillStyle = 'rgba(0, 0, 0, 0.95)';
+        ctx.fillStyle = 'rgb(0, 0, 255)';
         ctx.fillRect(underlineX - 2, underlineY - 1, underlineWidth + 4, underlineHeight + 3);
         ctx.restore();
 
-        ctx.fillStyle = textGrad;
+        ctx.fillStyle = 'rgb(0, 255, 0)';
         ctx.fillRect(underlineX, underlineY, underlineWidth, underlineHeight);
     }
     ctx.restore();
 }
 
 /**
- * Procedurally generates a 2D canvas texture atlas with subtle marble resin
- * and high-contrast engraved inlaid numerals.
+ * Procedurally generates a single shared channel-masked 2D canvas texture atlas.
+ * R Channel: Normalized grayscale marble resin turbulence.
+ * G Channel: Crisp inlaid numeral mask.
+ * B Channel: Engraved border trench shadow mask.
  */
 export function createDiceTextureAtlas(
     faceValues: number[],
     cols: number,
     rows: number,
-    theme: DiceTheme = DEFAULT_THEME,
+    fontName: string = 'Inter, sans-serif',
     cellSize: number = 256,
     sides?: number,
 ): THREE.CanvasTexture {
@@ -306,14 +327,6 @@ export function createDiceTextureAtlas(
     if (!ctx) {
         throw new Error('Failed to create 2D canvas context for dice texture');
     }
-
-    const baseHue = parseHueFromHsl(theme.backgroundColor, 265);
-    const fontName = theme.fontFamily ?? DEFAULT_THEME.fontFamily ?? 'Inter, sans-serif';
-
-    // Palette: Deep, saturated base tone + subtle translucent cloud + soft delicate vein
-    const [rBase, gBase, bBase] = hslToRgb(baseHue, 65, 17);
-    const [rMid, gMid, bMid] = hslToRgb(baseHue, 60, 24);
-    const [rVein, gVein, bVein] = hslToRgb((baseHue + 20) % 360, 45, 42);
 
     // Reuse low-res offscreen canvas for super fast noise generation (16x faster)
     const noiseRes = 64;
@@ -334,7 +347,7 @@ export function createDiceTextureAtlas(
         const centerX = startX + cellSize / 2;
         const centerY = startY + cellSize / 2;
 
-        // 1. Fast Noise Generation onto offscreen buffer
+        // 1. Fast Noise Generation onto offscreen buffer: R channel only
         const seedAngle = (f * 1.618) % (Math.PI * 2);
         const cosA = Math.cos(seedAngle);
         const sinA = Math.sin(seedAngle);
@@ -353,25 +366,18 @@ export function createDiceTextureAtlas(
                 const marbleSignal = Math.sin(rx * 1.8 + ry * 0.6 + 3.0 * turb);
                 const normMarble = (marbleSignal + 1) * 0.5;
 
-                const vein = Math.pow(normMarble, 2.5) * 0.35;
-                const cloud = normMarble * 0.25;
-
+                const veinRaw = Math.pow(normMarble, 3.8);
                 const distFromCenter = Math.sqrt(nx * nx + ny * ny);
                 const vignette = Math.max(0, 1 - Math.pow(distFromCenter * 0.9, 3.0));
 
-                let r = rBase + (rMid - rBase) * cloud + (rVein - rMid) * vein;
-                let g = gBase + (gMid - gBase) * cloud + (gVein - gMid) * vein;
-                let b = bBase + (bMid - bBase) * cloud + (bVein - bMid) * vein;
-
-                r = r * (0.60 + 0.40 * vignette);
-                g = g * (0.60 + 0.40 * vignette);
-                b = b * (0.60 + 0.40 * vignette);
+                const cloudVal = Math.min(255, Math.max(0, Math.round(normMarble * 255 * (0.60 + 0.40 * vignette))));
+                const veinVal = Math.min(255, Math.max(0, Math.round(veinRaw * 255)));
 
                 const pIdx = (py * noiseRes + px) * 4;
-                data[pIdx] = Math.min(255, Math.max(0, r));
-                data[pIdx + 1] = Math.min(255, Math.max(0, g));
-                data[pIdx + 2] = Math.min(255, Math.max(0, b));
-                data[pIdx + 3] = 255;
+                data[pIdx] = cloudVal;                                        // R: subtle translucent cloud swirl
+                data[pIdx + 1] = 0;                                           // G: numeral mask
+                data[pIdx + 2] = 0;                                           // B: trench mask
+                data[pIdx + 3] = veinVal;                                     // A: delicate mineral vein mask
             }
         }
 
@@ -381,23 +387,18 @@ export function createDiceTextureAtlas(
         ctx.imageSmoothingEnabled = true;
         ctx.drawImage(offscreen, startX, startY, cellSize, cellSize);
 
-        // 2. High-Contrast, Crisp Inlaid Numerals
+        // 2. Crisp Inlaid Numerals & Trench Masks (G & B channels)
         if (sides === 4 && f < D4_FACE_CORNERS.length) {
             const [topVal, blVal, brVal] = D4_FACE_CORNERS[f];
             const fontSize = Math.floor(cellSize * 0.22);
 
-            // Top apex numeral
-            drawFaceNumeral(ctx, topVal.toString(), centerX, centerY - cellSize * 0.22, fontSize, fontName, 0);
-
-            // Bottom-left apex numeral
-            drawFaceNumeral(ctx, blVal.toString(), centerX - cellSize * 0.19, centerY + cellSize * 0.11, fontSize, fontName, (-2 * Math.PI) / 3);
-
-            // Bottom-right apex numeral
-            drawFaceNumeral(ctx, brVal.toString(), centerX + cellSize * 0.19, centerY + cellSize * 0.11, fontSize, fontName, (2 * Math.PI) / 3);
+            drawFaceNumeralMask(ctx, topVal.toString(), centerX, centerY - cellSize * 0.22, fontSize, fontName, 0);
+            drawFaceNumeralMask(ctx, blVal.toString(), centerX - cellSize * 0.19, centerY + cellSize * 0.11, fontSize, fontName, (-2 * Math.PI) / 3);
+            drawFaceNumeralMask(ctx, brVal.toString(), centerX + cellSize * 0.19, centerY + cellSize * 0.11, fontSize, fontName, (2 * Math.PI) / 3);
         } else {
             const text = val.toString();
             const fontSize = Math.floor(cellSize * (text.length > 2 ? 0.36 : 0.46));
-            drawFaceNumeral(ctx, text, centerX, centerY, fontSize, fontName, 0, val === 6 || val === 9);
+            drawFaceNumeralMask(ctx, text, centerX, centerY, fontSize, fontName, 0, val === 6 || val === 9);
         }
     }
 
@@ -657,14 +658,14 @@ export function getNormalMapForDie(
 }
 
 /**
- * Generates or retrieves cached texture atlas for a given side count.
+ * Generates or retrieves cached channel-masked texture atlas for a given side count.
  */
 export function getTextureForDie(
     sides: number,
     faceValues: number[],
-    theme: DiceTheme = DEFAULT_THEME,
+    fontName: string = 'Inter, sans-serif',
 ): THREE.CanvasTexture {
-    const key = `${sides}_${theme.backgroundColor}_${theme.textColor}_${theme.fontFamily ?? ''}`;
+    const key = `${sides}_${fontName}`;
     const cached = textureAtlasCache.get(key);
     if (cached) {
         return cached;
@@ -673,28 +674,127 @@ export function getTextureForDie(
     let texture: THREE.CanvasTexture;
     switch (sides) {
         case 4:
-            texture = createDiceTextureAtlas(faceValues, 2, 2, theme, 256, 4);
+            texture = createDiceTextureAtlas(faceValues, 2, 2, fontName, 256, 4);
             break;
         case 6:
-            texture = createDiceTextureAtlas(faceValues, 3, 2, theme);
+            texture = createDiceTextureAtlas(faceValues, 3, 2, fontName);
             break;
         case 8:
-            texture = createDiceTextureAtlas(faceValues, 4, 2, theme);
+            texture = createDiceTextureAtlas(faceValues, 4, 2, fontName);
             break;
         case 10:
-            texture = createDiceTextureAtlas(faceValues, 5, 2, theme);
+            texture = createDiceTextureAtlas(faceValues, 5, 2, fontName);
             break;
         case 12:
-            texture = createDiceTextureAtlas(faceValues, 4, 3, theme);
+            texture = createDiceTextureAtlas(faceValues, 4, 3, fontName);
             break;
         case 20:
         default:
-            texture = createDiceTextureAtlas(faceValues, 5, 4, theme);
+            texture = createDiceTextureAtlas(faceValues, 5, 4, fontName);
             break;
     }
 
     textureAtlasCache.set(key, texture);
     return texture;
+}
+
+/**
+ * Creates a high-performance MeshStandardMaterial with player color tinting injected via shader uniforms.
+ * Shares the same single texture atlas across all players without redundant texture allocations.
+ */
+export function createDiceMaterial(
+    sides: number,
+    faceValues: number[],
+    theme: DiceTheme = DEFAULT_THEME,
+): THREE.MeshStandardMaterial {
+    const fontName = theme.fontFamily ?? DEFAULT_THEME.fontFamily ?? 'Inter, sans-serif';
+    const baseTexture = getTextureForDie(sides, faceValues, fontName);
+    const normalMap = getNormalMapForDie(sides, faceValues);
+    const emissiveMap = getEmissiveMapForDie(sides, faceValues, fontName);
+
+    const { h, s, l } = parseHsl(theme.backgroundColor);
+
+    let r1: number, g1: number, b1: number;
+    let r2: number, g2: number, b2: number;
+    let r3: number, g3: number, b3: number;
+
+    const isLight = l > 50;
+
+    if (s === 0) {
+        // Achromatic / Monochromatic (Obsidian Black to Carrara White)
+        const lCloud = isLight ? Math.max(5, l - 6) : Math.min(95, l + 6);
+        const lVein = isLight ? Math.max(5, l - 16) : Math.min(95, l + 14);
+
+        [r1, g1, b1] = hslToRgb(0, 0, l);
+        [r2, g2, b2] = hslToRgb(0, 0, lCloud);
+        [r3, g3, b3] = hslToRgb(0, 0, lVein);
+    } else {
+        // Saturated Tones (Deep Jewel, Mid, or Pastel)
+        const lCloud = isLight ? Math.max(5, l - 6) : Math.min(95, l + 6);
+        const lVein = isLight ? Math.max(5, l - 14) : Math.min(95, l + 14);
+        const hVein = (h + (isLight ? -10 : 12) + 360) % 360;
+
+        [r1, g1, b1] = hslToRgb(h, s, l);
+        [r2, g2, b2] = hslToRgb(h, Math.max(0, s - 7), lCloud);
+        [r3, g3, b3] = hslToRgb(hVein, Math.min(100, s + 5), lVein);
+    }
+
+    const bodyColor = new THREE.Color(r1 / 255, g1 / 255, b1 / 255);
+    const cloudColor = new THREE.Color(r2 / 255, g2 / 255, b2 / 255);
+    const veinColor = new THREE.Color(r3 / 255, g3 / 255, b3 / 255);
+
+    const mat = new THREE.MeshStandardMaterial({
+        map: baseTexture,
+        normalMap,
+        normalScale: new THREE.Vector2(0.85, 0.85),
+        roughness: 0.20,
+        metalness: 0.05,
+        emissiveMap,
+        emissive: new THREE.Color(0xffd54f),
+        emissiveIntensity: 0.0,
+    });
+
+    mat.onBeforeCompile = (shader) => {
+        shader.uniforms.uBodyColor = { value: bodyColor };
+        shader.uniforms.uCloudColor = { value: cloudColor };
+        shader.uniforms.uVeinColor = { value: veinColor };
+
+        shader.fragmentShader = `
+            uniform vec3 uBodyColor;
+            uniform vec3 uCloudColor;
+            uniform vec3 uVeinColor;
+        ` + shader.fragmentShader;
+
+        shader.fragmentShader = shader.fragmentShader.replace(
+            '#include <map_fragment>',
+            `
+            #ifdef USE_MAP
+                vec4 sampledMap = texture2D(map, vMapUv);
+                float cloudNoise  = sampledMap.r; // 0.0 - 1.0 soft translucent cloud swirl
+                float numeralMask = sampledMap.g; // 1.0 inside numeral, 0.0 outside
+                float trenchMask  = sampledMap.b; // 1.0 inside engraved trench
+                float veinNoise   = sampledMap.a; // 0.0 - 1.0 delicate mineral vein
+
+                // 1. Subtle translucent resin body with organic cloud variation
+                vec3 resinCol = mix(uBodyColor, uCloudColor, cloudNoise * 0.40);
+
+                // 2. Soft, delicate mineral vein wisps
+                float veinFactor = smoothstep(0.35, 0.95, veinNoise);
+                resinCol = mix(resinCol, uVeinColor, veinFactor * 0.40);
+
+                // 3. Dark engraved trench shadow
+                vec3 finalCol = mix(resinCol, vec3(0.01, 0.01, 0.02), trenchMask * (1.0 - numeralMask));
+
+                // 4. Inlaid enamel white numerals
+                finalCol = mix(finalCol, vec3(0.98, 0.98, 0.96), numeralMask);
+
+                diffuseColor = vec4(finalCol, 1.0);
+            #endif
+            `,
+        );
+    };
+
+    return mat;
 }
 
 /**

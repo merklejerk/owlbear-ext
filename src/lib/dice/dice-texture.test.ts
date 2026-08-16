@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { createPlayerDiceTheme, DEFAULT_THEME, getNormalMapForDie, getTextureForDie, getEmissiveMapForDie } from './dice-texture';
+import { createPlayerDiceTheme, DEFAULT_THEME, getNormalMapForDie, getTextureForDie, getEmissiveMapForDie, createDiceMaterial } from './dice-texture';
 
 describe('dice theme generator', () => {
     it('returns default theme when no player info provided', () => {
@@ -24,6 +24,23 @@ describe('dice theme generator', () => {
         expect(theme.textColor).toBe('#ffffff');
     });
 
+    it('generates an obsidian black theme from #000000', () => {
+        const theme = createPlayerDiceTheme('player-black', '#000000');
+        expect(theme.backgroundColor).toBe('hsl(0, 0%, 4%)');
+        expect(theme.textColor).toBe('#ffffff');
+    });
+
+    it('generates an alabaster white theme from #ffffff', () => {
+        const theme = createPlayerDiceTheme('player-white', '#ffffff');
+        expect(theme.backgroundColor).toBe('hsl(0, 0%, 95%)');
+        expect(theme.textColor).toBe('#ffffff');
+    });
+
+    it('preserves pastel and bright color lightness', () => {
+        const theme = createPlayerDiceTheme('player-pink', '#ff8888');
+        expect(theme.backgroundColor).toBe('hsl(0, 100%, 77%)');
+    });
+
     it('generates and memoizes a procedural normal map for dice', () => {
         const d6Values = [1, 2, 3, 4, 5, 6];
         const normal1 = getNormalMapForDie(6, d6Values);
@@ -37,10 +54,10 @@ describe('dice theme generator', () => {
         expect(d4Normal).toBeDefined();
     });
 
-    it('generates and memoizes procedural texture atlas for D4', () => {
+    it('generates and memoizes shared procedural texture atlas for D4', () => {
         const d4Values = [1, 2, 3, 4];
-        const tex1 = getTextureForDie(4, d4Values, DEFAULT_THEME);
-        const tex2 = getTextureForDie(4, d4Values, DEFAULT_THEME);
+        const tex1 = getTextureForDie(4, d4Values);
+        const tex2 = getTextureForDie(4, d4Values);
 
         expect(tex1).toBeDefined();
         expect(tex1).toBe(tex2);
@@ -57,5 +74,15 @@ describe('dice theme generator', () => {
         const d4Values = [1, 2, 3, 4];
         const d4Em = getEmissiveMapForDie(4, d4Values);
         expect(d4Em).toBeDefined();
+    });
+
+    it('creates MeshStandardMaterial with shader tinting hooks', () => {
+        const d20Values = Array.from({ length: 20 }, (_, i) => i + 1);
+        const theme = createPlayerDiceTheme('player-test', '#4488ff');
+        const mat = createDiceMaterial(20, d20Values, theme);
+
+        expect(mat).toBeDefined();
+        expect(mat.map).toBeDefined();
+        expect(typeof mat.onBeforeCompile).toBe('function');
     });
 });

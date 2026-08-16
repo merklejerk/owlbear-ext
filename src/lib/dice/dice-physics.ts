@@ -3,6 +3,36 @@ import * as CANNON from 'cannon-es';
 import { type DieDefinition } from './dice-geometries';
 import { createCannonConvexPolyhedron } from './dice-cannon-shapes';
 
+export const MAX_3D_DICE = 32;
+
+/**
+ * Mulberry32 32-bit seeded pseudo-random number generator.
+ * Produces deterministic floating-point numbers in [0, 1).
+ */
+export function createMulberry32(seed: number): () => number {
+    let s = seed >>> 0;
+    return () => {
+        s = (s + 0x6d2b79f5) >>> 0;
+        let t = Math.imul(s ^ (s >>> 15), 1 | s);
+        t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+}
+
+/**
+ * Generates a deterministic 32-bit unsigned integer hash from a string or number.
+ */
+export function hashStringToSeed(input?: string | number | null): number {
+    if (typeof input === 'number') return (input >>> 0);
+    if (!input) return 1337;
+    let hash = 0x811c9dc5;
+    for (let i = 0; i < input.length; i++) {
+        hash ^= input.charCodeAt(i);
+        hash = Math.imul(hash, 0x01000193);
+    }
+    return hash >>> 0;
+}
+
 export interface DiceKeyframe {
     position: [number, number, number];
     quaternion: [number, number, number, number];
@@ -23,6 +53,7 @@ export interface TrajectoryOptions {
     throwAngleRadians?: number;
     durationSeconds?: number;
     stepDt?: number;
+    seed?: number | string | null;
 }
 
 export interface MultiDiceRollItem {
@@ -35,6 +66,7 @@ export interface MultiDiceOptions {
     items: MultiDiceRollItem[];
     durationSeconds?: number;
     stepDt?: number;
+    seed?: number | string | null;
 }
 
 /**
@@ -123,19 +155,27 @@ export function relaxRestingPositions(
 /**
  * Simulates multiple dice in a shared Cannon.js world so they physically collide with each other
  * and the tabletop, while guaranteeing each die naturally settles on its exact target result with zero overlap.
+ * Completely deterministic when a seed is provided.
  */
 export function generateMultiDiceTrajectories(options: MultiDiceOptions): DiceTrajectory[] {
     const {
         items,
         durationSeconds = 1.35,
         stepDt = 1 / 60,
+        seed,
     } = options;
 
     if (!items.length) return [];
 
+    // Enforce hard ceiling on maximum simultaneous 3D physics dice
+    const clampedItems = items.slice(0, MAX_3D_DICE);
+
+    const seedNum = typeof seed === 'number' ? seed : hashStringToSeed(seed);
+    const rng = seed !== undefined ? createMulberry32(seedNum) : Math.random;
+
     // Relax all requested resting positions so no dice overlap
     const relaxedPositions = relaxRestingPositions(
-        items.map(it => ({
+        clampedItems.map(it => ({
             x: it.restingPosition?.x ?? 0,
             z: it.restingPosition?.z ?? 0,
             radius: it.die.radius,
@@ -175,21 +215,21 @@ export function generateMultiDiceTrajectories(options: MultiDiceOptions): DiceTr
 
     floorBody.material = tableMat;
 
-    const count = items.length;
+    const count = clampedItems.length;
     for (let i = 0; i < count; i++) {
-        const item = items[i];
+        const item = clampedItems[i];
         const targetPos = relaxedPositions[i];
         const shape = createCannonConvexPolyhedron(item.die.geometry);
 
         // Toss angles converging towards target resting position
-        const baseAngle = (i / Math.max(1, count)) * Math.PI * 2 + (Math.random() - 0.5) * 0.4;
-        const throwDist = 14.0 + Math.random() * 2.5;
+        const baseAngle = (i / Math.max(1, count)) * Math.PI * 2 + (rng() - 0.5) * 0.4;
+        const throwDist = 14.0 + rng() * 2.5;
         const startX = targetPos.x - Math.cos(baseAngle) * throwDist;
         const startZ = targetPos.z - Math.sin(baseAngle) * throwDist;
         const startY = item.die.radius + 1.2 + (i * 0.3); // Stagger height slightly so they don't spawn overlapping
 
         const initialQuat = new THREE.Quaternion().setFromEuler(
-            new THREE.Euler(Math.random() * Math.PI * 2, Math.random() * Math.PI * 2, Math.random() * Math.PI * 2),
+            new THREE.Euler(rng() * Math.PI * 2, rng() * Math.PI * 2, rng() * Math.PI * 2),
         );
 
         const dieBody = new CANNON.Body({
@@ -203,16 +243,16 @@ export function generateMultiDiceTrajectories(options: MultiDiceOptions): DiceTr
         });
 
         // Throw impulse towards resting position
-        const throwSpeed = 15.5 + Math.random() * 2.5;
-        const velX = Math.cos(baseAngle) * throwSpeed + (Math.random() - 0.5) * 2.5;
-        const velZ = Math.sin(baseAngle) * throwSpeed + (Math.random() - 0.5) * 2.5;
-        const velY = 2.5 + Math.random() * 1.5;
+        const throwSpeed = 15.5 + rng() * 2.5;
+        const velX = Math.cos(baseAngle) * throwSpeed + (rng() - 0.5) * 2.5;
+        const velZ = Math.sin(baseAngle) * throwSpeed + (rng() - 0.5) * 2.5;
+        const velY = 2.5 + rng() * 1.5;
 
         // Angular spin
-        const spinSpeed = 20.0 + Math.random() * 6.0;
-        const spinX = -Math.sin(baseAngle) * spinSpeed + (Math.random() - 0.5) * 4.0;
-        const spinY = (Math.random() - 0.5) * 6.0;
-        const spinZ = Math.cos(baseAngle) * spinSpeed + (Math.random() - 0.5) * 4.0;
+        const spinSpeed = 20.0 + rng() * 6.0;
+        const spinX = -Math.sin(baseAngle) * spinSpeed + (rng() - 0.5) * 4.0;
+        const spinY = (rng() - 0.5) * 6.0;
+        const spinZ = Math.cos(baseAngle) * spinSpeed + (rng() - 0.5) * 4.0;
 
         dieBody.velocity.set(velX, velY, velZ);
         dieBody.angularVelocity.set(spinX, spinY, spinZ);
@@ -310,6 +350,7 @@ export function generateTimeReversalTrajectory(options: TrajectoryOptions): Dice
         }],
         durationSeconds: options.durationSeconds,
         stepDt: options.stepDt,
+        seed: options.seed,
     });
     return trajectories[0];
 }

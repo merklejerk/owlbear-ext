@@ -8,6 +8,7 @@
     import { isRollMsg, type AnnounceMsgData, type EffectMsgData, type RollMsgData } from "$lib/types";
     import { isTruthy } from "$lib/util";
     import ViewportEffects from "$lib/viewport-effects.svelte";
+    import { set3dDiceEnabled, toggle3dDice, getDiceColorOverride, setDiceColorOverride, normalizeHexColor } from "$lib/dice-settings";
     import { onMount } from "svelte";
 
     interface RollHistoryItem {
@@ -180,7 +181,40 @@
             } else if (isRollAction(action)) {
                doRolls(action.rolls);
             } else if (isCommandAction(action)) {
-                if (action.cmd === 'effect') {
+                if (action.cmd === '3d') {
+                    const sub = (action.args[0] ?? '').toLowerCase();
+                    if (sub === 'off' || sub === '0' || sub === 'false' || sub === 'disable') {
+                        set3dDiceEnabled(false);
+                        obr.notification.show('3D dice overlay disabled', 'INFO');
+                    } else if (sub === 'on' || sub === '1' || sub === 'true' || sub === 'enable') {
+                        set3dDiceEnabled(true);
+                        obr.notification.show('3D dice overlay enabled', 'INFO');
+                    } else {
+                        const nextState = toggle3dDice();
+                        obr.notification.show(`3D dice overlay ${nextState ? 'enabled' : 'disabled'}`, 'INFO');
+                    }
+                } else if (action.cmd === 'dcolor' || action.cmd === 'dicecolor') {
+                    const sub = (action.args[0] ?? '').toLowerCase();
+                    if (!sub) {
+                        const current = getDiceColorOverride();
+                        if (current) {
+                            obr.notification.show(`Current dice color override is ${current}. Use /dcolor clear to reset.`, 'INFO');
+                        } else {
+                            obr.notification.show('No dice color override set (using player color). Set with /dcolor #ff4400', 'INFO');
+                        }
+                    } else if (['none', 'null', 'empty', 'reset', 'clear', 'off', '0'].includes(sub)) {
+                        setDiceColorOverride(null);
+                        obr.notification.show('Dice color override cleared (using player color)', 'INFO');
+                    } else {
+                        const normalized = normalizeHexColor(action.args[0]);
+                        if (normalized) {
+                            setDiceColorOverride(normalized);
+                            obr.notification.show(`Dice color override set to ${normalized}`, 'INFO');
+                        } else {
+                            obr.notification.show('Invalid hex color. Use /dcolor #ff4400 or /dcolor clear', 'ERROR');
+                        }
+                    }
+                } else if (action.cmd === 'effect') {
                     if (action.args.length < 1) {
                         throw new Error('Invalid effect');
                     }
@@ -216,6 +250,7 @@
     }
 
     function doRolls(rolls: Roll[]) {
+        const colorOverride = getDiceColorOverride();
         obr.broadcast.sendMessage(
             PUBLIC_EXT_ID,
             {
@@ -224,12 +259,14 @@
                 rollId: crypto.randomUUID(),
                 playerId: obr.player.id,
                 when: Date.now(),
+                color: colorOverride || undefined,
             } satisfies RollMsgData,
             { destination: 'ALL' },
         );
     }
 
     async function runCritTest() {
+        const colorOverride = getDiceColorOverride();
         obr.broadcast.sendMessage(
             PUBLIC_EXT_ID,
             {
@@ -238,7 +275,7 @@
                 rollId: crypto.randomUUID(),
                 playerId: obr.player.id,
                 when: Date.now(),
-
+                color: colorOverride || undefined,
             } satisfies RollMsgData,
             { destination: 'ALL' },
         );
@@ -303,6 +340,10 @@
         inset: 0;
         display: flex;
         overflow: hidden;
+        user-select: none;
+        -webkit-user-select: none;
+        -webkit-user-drag: none;
+        -webkit-tap-highlight-color: transparent;
 
         .grid {
             max-height: 100%;
@@ -484,6 +525,8 @@
             }
     
             input[type="text"] {
+                user-select: text;
+                -webkit-user-select: text;
                 font-size: 1.05em;
                 border-radius: 0.75ex;
                 padding: 0.5em 0.75em;

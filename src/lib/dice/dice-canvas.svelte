@@ -9,12 +9,13 @@
     import { onMount, onDestroy } from 'svelte';
     import * as THREE from 'three';
     import { getDieDefinition, isSupportedDieSize, type DieDefinition } from './dice-geometries';
-    import { getTextureForDie, getNormalMapForDie, getEmissiveMapForDie, DEFAULT_THEME, type DiceTheme } from './dice-texture';
-    import { generateMultiDiceTrajectories, type DiceTrajectory } from './dice-physics';
+    import { createDiceMaterial, DEFAULT_THEME, type DiceTheme } from './dice-texture';
+    import { generateMultiDiceTrajectories, type DiceTrajectory, MAX_3D_DICE, createMulberry32, hashStringToSeed } from './dice-physics';
 
     export let dice: RollItem[] = [{ sides: 20, result: 20 }];
     export let theme: DiceTheme = DEFAULT_THEME;
     export let holdDuration: number = 2.5;
+    export let seed: string | number | null | undefined = undefined;
     export let onComplete: () => void = () => {};
 
     let container: HTMLDivElement;
@@ -173,13 +174,15 @@
     onMount(() => {
         if (!container) return;
 
-        // Filter out unsupported dice before rendering or simulating
-        const supportedDice = dice.filter(d => isSupportedDieSize(d.sides));
+        // Filter out unsupported dice and enforce MAX_3D_DICE ceiling
+        const supportedDice = dice.filter(d => isSupportedDieSize(d.sides)).slice(0, MAX_3D_DICE);
         const count = supportedDice.length;
         if (count === 0) {
             onComplete();
             return;
         }
+
+        const rng = seed !== undefined ? createMulberry32(hashStringToSeed(seed)) : Math.random;
 
         const width = container.clientWidth || window.innerWidth;
         const height = container.clientHeight || window.innerHeight;
@@ -199,7 +202,7 @@
         });
         renderer.autoClear = false;
         renderer.setSize(width, height);
-        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
         renderer.setClearColor(0x000000, 0);
         renderer.shadowMap.enabled = true;
         renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -213,8 +216,8 @@
         const dirLight = new THREE.DirectionalLight(0xffffff, 1.85);
         dirLight.position.set(-8, 22, -10); // Angled key light creates crisp micro-shadows along normals
         dirLight.castShadow = true;
-        dirLight.shadow.mapSize.width = 2048;
-        dirLight.shadow.mapSize.height = 2048;
+        dirLight.shadow.mapSize.width = 1024;
+        dirLight.shadow.mapSize.height = 1024;
         dirLight.shadow.camera.near = 0.5;
         dirLight.shadow.camera.far = 55;
         const shadowExtent = 18;
@@ -222,20 +225,20 @@
         dirLight.shadow.camera.right = shadowExtent;
         dirLight.shadow.camera.top = shadowExtent;
         dirLight.shadow.camera.bottom = -shadowExtent;
-        dirLight.shadow.bias = -0.0003;
-        dirLight.shadow.radius = 2.5;
+        dirLight.shadow.bias = -0.0008;
         dirLight.layers.enable(1);
         scene.add(dirLight);
 
-        const fillLight = new THREE.DirectionalLight(0xaac0e8, 0.45);
-        fillLight.position.set(12, 14, 12);
+        // Secondary soft fill light from opposite angle
+        const fillLight = new THREE.DirectionalLight(0xaaccff, 0.50);
+        fillLight.position.set(10, 12, 10);
         fillLight.layers.enable(1);
         scene.add(fillLight);
 
-        // Transparent tabletop shadow receiver (casts soft shadows onto map)
+        // Transparent shadow receiver plane (floor table)
         const shadowPlaneGeo = new THREE.PlaneGeometry(80, 80);
         const shadowPlaneMat = new THREE.ShadowMaterial({
-            opacity: 0.42,
+            opacity: 0.38,
         });
         const shadowPlane = new THREE.Mesh(shadowPlaneGeo, shadowPlaneMat);
         shadowPlane.rotation.x = -Math.PI / 2;
@@ -257,11 +260,11 @@
             let restX = 0;
             let restZ = 0;
             if (count === 1) {
-                restX = (Math.random() - 0.5) * (baseRadius * 0.5);
-                restZ = (Math.random() - 0.5) * (baseRadius * 0.4);
+                restX = (rng() - 0.5) * (baseRadius * 0.5);
+                restZ = (rng() - 0.5) * (baseRadius * 0.4);
             } else {
-                const angle = (idx / count) * Math.PI * 2 + (Math.random() - 0.5) * 0.3;
-                const r = clusterRadius * (0.85 + Math.random() * 0.3);
+                const angle = (idx / count) * Math.PI * 2 + (rng() - 0.5) * 0.3;
+                const r = clusterRadius * (0.85 + rng() * 0.3);
                 restX = Math.cos(angle) * r;
                 restZ = Math.sin(angle) * (r * 0.75);
             }
@@ -276,29 +279,14 @@
         const trajectories = generateMultiDiceTrajectories({
             items: multiItems,
             durationSeconds: 1.3,
+            seed,
         });
 
         const activeDice: ActiveDie[] = [];
         for (let i = 0; i < count; i++) {
             const item = dice[i];
             const def = multiItems[i].die;
-            const texture = getTextureForDie(item.sides, def.faceValues, theme);
-            const normalMap = getNormalMapForDie(item.sides, def.faceValues);
-            const emissiveMap = getEmissiveMapForDie(item.sides, def.faceValues, theme.fontFamily);
-
-            const mat = new THREE.MeshPhysicalMaterial({
-                map: texture,
-                normalMap,
-                normalScale: new THREE.Vector2(0.85, 0.85),
-                roughness: 0.20,
-                metalness: 0.05,
-                clearcoat: 1.0,
-                clearcoatRoughness: 0.06,
-                reflectivity: 0.95,
-                emissiveMap,
-                emissive: new THREE.Color(0xffd54f),
-                emissiveIntensity: 0.0,
-            });
+            const mat = createDiceMaterial(item.sides, def.faceValues, theme);
 
             const mesh = new THREE.Mesh(def.geometry, mat);
             mesh.castShadow = true;
@@ -314,13 +302,8 @@
             const edgeLines = new THREE.LineSegments(edges, lineMat);
             mesh.add(edgeLines);
 
-            if (item.sides === 20 && item.result === 20) {
-                mesh.layers.set(1);
-                edgeLines.layers.set(1);
-            } else {
-                mesh.layers.set(0);
-                edgeLines.layers.set(0);
-            }
+            mesh.layers.set(0);
+            edgeLines.layers.set(0);
 
             scene.add(mesh);
 
@@ -660,12 +643,22 @@
 
                     // Nat 20 selective numeral ignition & facet flare (zero body tint wash)
                     if (item.sides === 20 && item.result === 20) {
-                        const holdProgress = (elapsed - traj.duration) / holdDuration;
-                        const impactFlash = Math.max(0, 1 - (elapsed - traj.duration) / 0.50);
+                        const dt = elapsed - traj.duration;
+                        const holdProgress = dt / holdDuration;
+                        const impactFlash = Math.max(0, 1 - dt / 0.50);
                         const breathe = Math.sin(holdProgress * Math.PI * 2) * 0.15;
 
+                        // Die is on Layer 1 during the isolated 1.0s glint sweep, Layer 0 otherwise
+                        if (dt >= 0 && dt <= 1.0) {
+                            die.mesh.layers.set(1);
+                            die.edgeLines.layers.set(1);
+                        } else {
+                            die.mesh.layers.set(0);
+                            die.edgeLines.layers.set(0);
+                        }
+
                         // Radiant engraved numerals via pitch-black background emissive map
-                        const mat = die.mesh.material as THREE.MeshPhysicalMaterial;
+                        const mat = die.mesh.material as THREE.MeshStandardMaterial;
                         mat.emissive.setHex(0xffdf77);
                         mat.emissiveIntensity = Math.min(2.5, 1.25 + 1.25 * impactFlash + breathe);
 
@@ -685,7 +678,7 @@
 
                         // Sputtering, dying red ember numeral flicker (like a dying neon sign / match)
                         const flicker = Math.sin(dt * 38) > 0 ? (0.7 + Math.random() * 0.3) : 0.1;
-                        const mat = die.mesh.material as THREE.MeshPhysicalMaterial;
+                        const mat = die.mesh.material as THREE.MeshStandardMaterial;
                         mat.emissive.setHex(0xef4444);
                         mat.emissiveIntensity = 2.2 * flicker * fade;
 
@@ -790,10 +783,12 @@
             }
 
             // Animate Nat 20 dynamic lights and orbital specular flourish sweep
+            let isGlintActive = false;
             for (const nl of nat20Lights) {
                 const dt = elapsed - nl.startTime;
                 const sweepDuration = 1.0; // 1.0s full 360-degree flourishing pass
                 if (dt >= 0 && dt <= sweepDuration) {
+                    isGlintActive = true;
                     const progress = dt / sweepDuration;
 
                     // Epicenter ground flash
@@ -825,12 +820,12 @@
             }
 
             // Two-pass rendering: Pass 1 renders normal dice, floor, and particles on Layer 0.
-            // Pass 2 renders ONLY Nat 20 dice on Layer 1 with their isolated orbital glint light.
+            // Pass 2 renders ONLY Nat 20 dice on Layer 1 during the active glint flourish window.
             renderer.clear();
             camera.layers.set(0);
             renderer.render(scene, camera);
 
-            if (nat20Lights.length > 0) {
+            if (isGlintActive) {
                 camera.layers.set(1);
                 renderer.render(scene, camera);
             }

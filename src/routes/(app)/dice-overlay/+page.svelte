@@ -14,6 +14,7 @@
     const rawDiceParam = $page.url.searchParams.get('dice') ?? '20:20';
     const playerParam = $page.url.searchParams.get('player');
     const colorParam = $page.url.searchParams.get('color');
+    const rollIdParam = $page.url.searchParams.get('rollId');
 
     const playerTheme = createPlayerDiceTheme(playerParam, colorParam);
 
@@ -106,6 +107,6 @@
     on:dragstart|preventDefault
     role="presentation"
     >
-    <DiceCanvas dice={diceList} theme={playerTheme} onComplete={handleComplete} />
+    <DiceCanvas dice={diceList} theme={playerTheme} seed={rollIdParam} onComplete={handleComplete} />
 </div>
 {/if}

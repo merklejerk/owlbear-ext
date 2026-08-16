@@ -142,4 +142,40 @@ describe('time-reversal dice physics generator', () => {
             }
         }
     });
+
+    it('bounds simultaneous dice generation to MAX_3D_DICE', () => {
+        const d6 = createD6Geometry(1.0);
+        // Create 50 items
+        const items = Array.from({ length: 50 }, () => ({ die: d6, targetResult: 4 }));
+        const trajectories = generateMultiDiceTrajectories({
+            items,
+            durationSeconds: 0.5,
+        });
+
+        expect(trajectories.length).toBe(32);
+    });
+
+    it('produces 100% deterministic trajectories when given the same seed', () => {
+        const d20 = createD20Geometry(1.0);
+        const options = {
+            items: [
+                { die: d20, targetResult: 20 },
+                { die: d20, targetResult: 1 },
+            ],
+            durationSeconds: 1.0,
+            seed: 'roll-uuid-abc-123',
+        };
+
+        const run1 = generateMultiDiceTrajectories(options);
+        const run2 = generateMultiDiceTrajectories(options);
+
+        expect(run1).toEqual(run2);
+
+        // Different seed produces different initial toss angles
+        const run3 = generateMultiDiceTrajectories({
+            ...options,
+            seed: 'roll-uuid-xyz-999',
+        });
+        expect(run1[0].keyframes[0].position).not.toEqual(run3[0].keyframes[0].position);
+    });
 });

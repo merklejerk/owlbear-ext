@@ -7,6 +7,7 @@ export interface RollMsgData {
     when: number;
     playerId: string;
     imported?: boolean;
+    color?: string;
 }
 
 export interface AnnounceMsgData {
