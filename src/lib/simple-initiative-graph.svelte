@@ -9,6 +9,7 @@
     import { PUBLIC_EXT_ID } from "$env/static/public";
     import IconButton from "./icon-button.svelte";
     import Icon from "./icon.svelte";
+    import ConfirmDialog from "./confirm-dialog.svelte";
     import type { TrackerMetadata } from "./types";
 
     interface Initiative {
@@ -26,6 +27,7 @@
     let roundCount = 0;
     let editingId: string | null = null;
     let editDraftValue: string | number = '';
+    let showClearConfirm = false;
     const entryElems = new Map<string, HTMLElement>();
     
     $: empty = sortedIds.length === 0;
@@ -173,6 +175,20 @@
                 [ROUND_METADATA_ID]: Math.max(0, newRound),
             });
         }
+    }
+
+    async function clearTracker(): Promise<void> {
+        const itemIds = Object.keys(initiativesById);
+        if (itemIds.length === 0) return;
+        await obr.scene.items.updateItems(
+            itemIds,
+            items => {
+                for (const it of items) {
+                    delete it.metadata[TRACKER_METADATA_ID];
+                }
+            },
+        );
+        await setSceneRoundCount(0);
     }
 
     async function goToNextTurn() {
@@ -387,9 +403,16 @@
         .controls {
             display: flex;
             justify-content: space-between;
+            align-items: center;
             padding: 0 0.5ex;
 
-            > .round-count {
+            > .round-controls {
+                display: flex;
+                gap: 1ex;
+                align-items: center;
+            }
+
+            .round-count {
                 border: 1px solid color-mix(in hsl, var(--theme-text-color), transparent 75%);
                 border-radius: 0.5ex;
                 position: relative;
@@ -419,6 +442,7 @@
             > .turn-controls {
                 display: flex;
                 gap: 2ex;
+                align-items: center;
             }
         }
     }
@@ -480,18 +504,25 @@
         {/each}
     </div>
     <div class="controls">
-        <div class="round-count">
-            <div class="content">
-                <Icon title="Round" iconPath={"checkered-flag.svg"}/> {roundCount + 1}
+        <div class="round-controls">
+            <div class="round-count">
+                <div class="content">
+                    <Icon title="Round" iconPath={"checkered-flag.svg"}/> {roundCount + 1}
+                </div>
+                <div class="overlay">
+                    <IconButton
+                        on:click={() => setSceneRoundCount(0)}
+                        title="Reset" iconPath="undo.svg"
+                        noAnimate
+                        fillContainer
+                        />
+                </div>
             </div>
-            <div class="overlay">
-                <IconButton
-                    on:click={() => setSceneRoundCount(0)}
-                    title="Reset" iconPath="undo.svg"
-                    noAnimate
-                    fillContainer
-                    />
-            </div>
+            <IconButton
+                on:click={() => (showClearConfirm = true)}
+                title="Clear tracker"
+                iconPath="trash.svg"
+                />
         </div>
         <div class="turn-controls">
             <IconButton
@@ -506,4 +537,13 @@
                 />
         </div>
     </div>
+
+    <ConfirmDialog
+        bind:open={showClearConfirm}
+        title="Clear Initiative Tracker"
+        message="Are you sure you want to clear all combatants from the initiative tracker?"
+        confirmLabel="Clear"
+        danger
+        on:confirm={clearTracker}
+    />
 </div>
