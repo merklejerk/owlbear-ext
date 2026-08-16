@@ -130,36 +130,67 @@ function fbmTurbulence(x: number, y: number): number {
 }
 
 /**
- * Generates distinct micro-pits and porous cavities characteristic of tumbled/worn marble stone.
+ * High-avalanche 32-bit integer hash returning float in [0, 1).
+ */
+function hash2D(x: number, y: number, seed: number): number {
+    let h = Math.imul(x ^ seed, 0x27d4eb2d) ^ Math.imul(y ^ (seed * 31), 0x165667b1);
+    h = Math.imul(h ^ (h >>> 15), 0x85ebca6b);
+    h = Math.imul(h ^ (h >>> 13), 0xc2b2ae35);
+    return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+}
+
+/**
+ * Generates natural, organic surface cavities and subtle tumbled waviness
+ * with domain warping and irregular non-grid spacing.
  */
 function stonePittingNoise(x: number, y: number, seed: number): number {
-    const scale = 3.6;
-    const gx = Math.floor(x * scale);
-    const gy = Math.floor(y * scale);
-    let minD = 1.0;
+    // 1. Subtle broad surface undulation (tumbled orange-peel waviness)
+    const undulation = (perlin2D(x * 1.6 + seed, y * 1.6) * 0.6 + perlin2D(x * 3.2, y * 3.2 + seed) * 0.4) * 4.5;
+
+    // 2. Domain-warp coordinates to completely break grid alignment
+    const warpX = perlin2D(x * 1.2 + seed * 1.7, y * 1.2) * 0.85;
+    const warpY = perlin2D(x * 1.2 + 31.4, y * 1.2 + seed * 2.3) * 0.85;
+
+    const wx = x + warpX;
+    const wy = y + warpY;
+
+    const scale = 2.4;
+    const gx = Math.floor(wx * scale);
+    const gy = Math.floor(wy * scale);
+
+    let maxPitDepth = 0;
 
     for (let ox = -1; ox <= 1; ox++) {
         for (let oy = -1; oy <= 1; oy++) {
             const cx = gx + ox;
             const cy = gy + oy;
-            const h = PERM[(PERM[(cx + seed) & 255] + (cy + seed * 7)) & 255];
-            // ~45% of cells contain a pit
-            if ((h & 7) > 3) continue;
 
-            const jx = cx + ((h & 15) / 15);
-            const jy = cy + (((h >> 4) & 15) / 15);
-            const dx = x * scale - jx;
-            const dy = y * scale - jy;
+            // Pseudo-random selection with high-entropy hash
+            const spawnVal = hash2D(cx, cy, seed + 101);
+            // Only ~20% of cells have a micro-ding (sporadic natural distribution)
+            if (spawnVal > 0.20) continue;
+
+            const jx = cx + 0.15 + hash2D(cx, cy, seed + 202) * 0.70;
+            const jy = cy + 0.15 + hash2D(cx, cy, seed + 303) * 0.70;
+            const dx = wx * scale - jx;
+            const dy = wy * scale - jy;
             const d = Math.hypot(dx, dy);
-            if (d < minD) minD = d;
+
+            // Variable pit radius and depth
+            const pitRadius = 0.08 + hash2D(cx, cy, seed + 404) * 0.16;
+            const pitDepth = 16 + hash2D(cx, cy, seed + 505) * 20;
+
+            if (d < pitRadius) {
+                const profile = Math.pow(1 - d / pitRadius, 1.8);
+                const depth = profile * pitDepth;
+                if (depth > maxPitDepth) {
+                    maxPitDepth = depth;
+                }
+            }
         }
     }
 
-    if (minD < 0.28) {
-        const pitProfile = Math.pow(1 - minD / 0.28, 1.8);
-        return -pitProfile * 45; // Crisp concave pit indentation
-    }
-    return 0;
+    return undulation - maxPitDepth;
 }
 
 function hslToRgb(h: number, s: number, l: number): [number, number, number] {
@@ -482,21 +513,22 @@ export function createDiceNormalMapAtlas(
         }
         hCtx.putImageData(cellHImg, startX, startY);
 
-        // Step 1b: Draw fine tumbling hairline scratches across this face cell
+        // Step 1b: Draw fine tumbling hairline scratches with organic random trajectories
         hCtx.save();
         hCtx.lineCap = 'round';
-        for (let s = 0; s < 22; s++) {
-            const scratchX = startX + 20 + ((s * 41 + f * 17) % (cellSize - 40));
-            const scratchY = startY + 20 + ((s * 59 + f * 31) % (cellSize - 40));
-            const angle = ((s * 1.43 + f * 2.71) % (Math.PI * 2));
-            const len = 10 + ((s * 13 + f * 9) % 32);
-            const isDeep = (s % 5 === 0);
+        const scratchCount = 14;
+        for (let s = 0; s < scratchCount; s++) {
+            const sx = startX + 15 + hash2D(s, f, 11) * (cellSize - 30);
+            const sy = startY + 15 + hash2D(s, f, 22) * (cellSize - 30);
+            const angle = hash2D(s, f, 33) * Math.PI * 2;
+            const len = 6 + hash2D(s, f, 44) * 20;
+            const isDeep = hash2D(s, f, 55) < 0.20;
 
             hCtx.beginPath();
-            hCtx.moveTo(scratchX, scratchY);
-            hCtx.lineTo(scratchX + Math.cos(angle) * len, scratchY + Math.sin(angle) * len);
-            hCtx.lineWidth = isDeep ? 2.4 : 1.4;
-            hCtx.strokeStyle = isDeep ? 'rgba(20, 20, 20, 0.80)' : 'rgba(35, 35, 35, 0.60)';
+            hCtx.moveTo(sx, sy);
+            hCtx.lineTo(sx + Math.cos(angle) * len, sy + Math.sin(angle) * len);
+            hCtx.lineWidth = isDeep ? 1.8 : 1.1;
+            hCtx.strokeStyle = isDeep ? 'rgba(25, 25, 25, 0.70)' : 'rgba(45, 45, 45, 0.45)';
             hCtx.stroke();
         }
         hCtx.restore();
@@ -539,7 +571,7 @@ export function createDiceNormalMapAtlas(
     const nImgData = nCtx.createImageData(width, height);
     const nData = nImgData.data;
 
-    const normalStrength = 3.6;
+    const normalStrength = 2.4;
 
     for (let y = 0; y < height; y++) {
         const yAbove = Math.max(0, y - 1);
