@@ -280,6 +280,7 @@
         display: flex;
         flex-direction: column;
         gap: 0.5em;
+        font-size: 1.05em;
 
         .turns {
             overflow: hidden auto;

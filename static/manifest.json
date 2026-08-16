@@ -9,7 +9,7 @@
         "icon": "/hat.svg",
         "popover": "/action",
         "width": 1,
-        "height": 384
+        "height": 512
     },
     "background_url": "/"
 }

@@ -53,6 +53,19 @@
         overflow: hidden;
         width: 100vw;
         height: 100vh;
+        -webkit-user-select: none !important;
+        user-select: none !important;
+        -webkit-user-drag: none !important;
+        -webkit-tap-highlight-color: transparent !important;
+        outline: none !important;
+    }
+
+    :global(*) {
+        -webkit-user-select: none !important;
+        user-select: none !important;
+        -webkit-user-drag: none !important;
+        -webkit-tap-highlight-color: transparent !important;
+        outline: none !important;
     }
 
     .overlay-container {
@@ -60,19 +73,38 @@
         inset: 0;
         width: 100vw;
         height: 100vh;
-        user-select: none;
+        -webkit-user-select: none !important;
+        user-select: none !important;
+        -webkit-tap-highlight-color: transparent !important;
+        outline: none !important;
         cursor: pointer;
+    }
+
+    .overlay-container:focus,
+    .overlay-container:focus-visible,
+    .overlay-container:active {
+        outline: none !important;
+        box-shadow: none !important;
+    }
+
+    :global(canvas) {
+        outline: none !important;
+        -webkit-user-select: none !important;
+        user-select: none !important;
     }
 </style>
 
 {#if visible}
+<!-- svelte-ignore a11y-click-events-have-key-events -->
+<!-- svelte-ignore a11y-no-noninteractive-element-interactions -->
 <div
     class="overlay-container"
     out:fade={{ duration: 200 }}
     on:pointerdown={handleComplete}
     on:click={handleComplete}
-    role="button"
-    tabindex="-1"
+    on:selectstart|preventDefault
+    on:dragstart|preventDefault
+    role="presentation"
     >
     <DiceCanvas dice={diceList} theme={playerTheme} onComplete={handleComplete} />
 </div>

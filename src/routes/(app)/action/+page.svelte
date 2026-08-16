@@ -2,8 +2,9 @@
     import { PUBLIC_DEV_MODE, PUBLIC_EXT_ID } from "$env/static/public";
     import { getObr, getPlayersStore } from "$lib/obr-host.svelte";
     import RollFormula from "$lib/roll-formula.svelte";
-    import { cloneRoll, getRollResult, isCriticalRoll, ParseRollError, parseRollSpec, reroll, type Roll } from "$lib/rolls";
+    import { cloneRoll, deleteLastTerm, getRollResult, isCriticalRoll, normalizeRollExpression, ParseRollError, parseRollSpec, reroll, type Roll } from "$lib/rolls";
     import SimpleInitiativeGraph from "$lib/simple-initiative-graph.svelte";
+    import DiceShortcuts from "$lib/dice-shortcuts.svelte";
     import { isRollMsg, type AnnounceMsgData, type EffectMsgData, type RollMsgData } from "$lib/types";
     import { isTruthy } from "$lib/util";
     import ViewportEffects from "$lib/viewport-effects.svelte";
@@ -41,6 +42,59 @@
     let clientWidth = 0;
     let isInitiativeGraphEmpty = true;
     let getEffectStatus: (e: string) => boolean;
+
+    function appendDiceShortcut(die: string) {
+        let trimmed = rawInput.trim();
+        if (!trimmed) {
+            rawInput = die;
+            return;
+        }
+
+        // Case 1: Incomplete trailing 'd' or count+'d' (e.g. "3d", "d")
+        const matchD = trimmed.match(/^(.*?)(\d*)\s*d$/i);
+        if (matchD) {
+            const prefix = matchD[1];
+            const count = matchD[2];
+            const sides = die.slice(1);
+            const newTerm = count ? `${count}d${sides}` : `d${sides}`;
+            const fullExpr = prefix ? `${prefix}${newTerm}` : newTerm;
+            rawInput = normalizeRollExpression(fullExpr);
+            return;
+        }
+
+        // Case 2: Strip trailing broken operators and extra whitespace (e.g. "2d6 +", "2d6 -")
+        trimmed = trimmed.replace(/[+\-*/,\s]+$/, '');
+        if (!trimmed) {
+            rawInput = die;
+            return;
+        }
+
+        // Case 3: Normalize full expression with new die term
+        const testInput = `${trimmed} + ${die}`;
+        rawInput = normalizeRollExpression(testInput);
+    }
+
+    function handleBackspaceShortcut() {
+        rawInput = deleteLastTerm(rawInput);
+    }
+
+    function handleBonusShortcut(delta: number) {
+        let trimmed = rawInput.trim();
+        if (!trimmed) {
+            rawInput = `${delta}`;
+            return;
+        }
+
+        trimmed = trimmed.replace(/[+\-*/,\s]+$/, '');
+        if (!trimmed) {
+            rawInput = `${delta}`;
+            return;
+        }
+
+        const op = delta >= 0 ? `+ ${delta}` : `- ${Math.abs(delta)}`;
+        const testInput = `${trimmed} ${op}`;
+        rawInput = normalizeRollExpression(testInput);
+    }
 
     function isRollAction(action: InputAction): action is RollAction {
         return !!(action as any).rolls;
@@ -227,6 +281,9 @@
         if (clientWidth && clientWidth !== window.innerWidth) {
             obr.action.setWidth(clientWidth);
         }
+        if (obr.action && typeof (obr.action as any).setHeight === 'function') {
+            (obr.action as any).setHeight(512);
+        }
     }
 </script>
 
@@ -246,7 +303,14 @@
             grid-template:  'test-controls test-controls' auto
                             'rolls-header initiative-header' auto
                             'roll-history initiative' 1fr
-                            'roll-input initiative' auto / 40ex fit-content(100%);
+                            'roll-input initiative' auto
+                            'dice-shortcuts dice-shortcuts' auto / 40ex fit-content(100%);
+        }
+
+        .dice-shortcuts {
+            grid-area: dice-shortcuts;
+            width: 100%;
+            margin-top: 1.25ex;
         }
 
         .test-controls {
@@ -256,7 +320,8 @@
         .header {
             text-align: center;
             font-weight: bold;
-            opacity: 0.75;
+            font-size: 1.15em;
+            opacity: 0.85;
             color: var(--theme-secondary-color);
             margin-bottom: 0.25em;
         }
@@ -273,6 +338,8 @@
     
             > .item {
                 position: relative;
+                font-size: 1.05em;
+                line-height: 1.35;
                 animation: 0.2s cubic-bezier(.43,.89,.86,1.22) 1 appear;
 
                 @keyframes appear {
@@ -409,8 +476,9 @@
             }
     
             input[type="text"] {
+                font-size: 1.05em;
                 border-radius: 0.75ex;
-                padding: 1ex;
+                padding: 0.5em 0.75em;
                 border: 1px solid var(--theme-primary-color);
                 background: transparent;
                 color: var(--theme-text-color);
@@ -530,6 +598,13 @@
             <div class="graph">
                 <SimpleInitiativeGraph bind:empty={isInitiativeGraphEmpty} />
             </div>
+        </div>
+        <div class="dice-shortcuts">
+            <DiceShortcuts
+                on:select={e => appendDiceShortcut(e.detail)}
+                on:bonus={e => handleBonusShortcut(e.detail)}
+                on:backspace={() => handleBackspaceShortcut()}
+            />
         </div>
     </div>
 </div>

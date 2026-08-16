@@ -9,6 +9,8 @@ import {
     type BinaryRoll,
     ParseRollError,
     extractDiceItems,
+    normalizeRollExpression,
+    deleteLastTerm,
 } from './rolls';
 
 describe('rolls parser & evaluator', () => {
@@ -131,6 +133,55 @@ describe('rolls parser & evaluator', () => {
                 { sides: 6, result: 4 },
                 { sides: 6, result: 6 },
             ]);
+        });
+    });
+
+    describe('expression normalization', () => {
+        it('normalizes repeated like dice into a single group', () => {
+            expect(normalizeRollExpression('2d6 + d6 + d6')).toBe('4d6');
+            expect(normalizeRollExpression('d20 + d20')).toBe('2d20');
+        });
+
+        it('normalizes mixed dice expressions in canonical order', () => {
+            expect(normalizeRollExpression('d20 + d6 + d6 + d4')).toBe('d20 + 2d6 + d4');
+            expect(normalizeRollExpression('2d4 + d20 + 3d4')).toBe('d20 + 5d4');
+        });
+
+        it('normalizes constants and mixed arithmetic', () => {
+            expect(normalizeRollExpression('2d6 + 5 + 3')).toBe('2d6 + 8');
+            expect(normalizeRollExpression('d20 + 4 - 1')).toBe('d20 + 3');
+            expect(normalizeRollExpression('d20 + 1 + 1')).toBe('d20 + 2');
+            expect(normalizeRollExpression('d20 + 2 - 1')).toBe('d20 + 1');
+            expect(normalizeRollExpression('d20 + 1 - 1')).toBe('d20');
+            expect(normalizeRollExpression('1 - 1')).toBe('');
+            expect(normalizeRollExpression('5 - 5')).toBe('');
+        });
+
+        it('normalizes advantage roll expressions', () => {
+            expect(normalizeRollExpression('d20a + d6 + d6')).toBe('d20a + 2d6');
+            expect(normalizeRollExpression('d20a + 5')).toBe('d20a + 5');
+        });
+
+        it('gracefully returns unparseable or partial input', () => {
+            expect(normalizeRollExpression('invalid+')).toBe('invalid+');
+        });
+    });
+
+    describe('deleteLastTerm', () => {
+        it('deletes the last term from multi-term expressions', () => {
+            expect(deleteLastTerm('1d6 + 5 + 2d20')).toBe('d6 + 5');
+            expect(deleteLastTerm('d6 + 5')).toBe('d6');
+            expect(deleteLastTerm('d6')).toBe('');
+            expect(deleteLastTerm('')).toBe('');
+        });
+
+        it('handles trailing operators and spaces', () => {
+            expect(deleteLastTerm('2d6 + 5 + ')).toBe('2d6');
+            expect(deleteLastTerm('d20a + 3d8')).toBe('d20a');
+        });
+
+        it('handles fallback for invalid syntax', () => {
+            expect(deleteLastTerm('something + else')).toBe('something');
         });
     });
 });
