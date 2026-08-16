@@ -22,6 +22,14 @@
             path: "M 44 14 L 80 34 L 80 74 L 44 94 L 8 74 L 8 34 Z",
             bgPath: "M 56 6 L 92 26 L 92 66 L 56 86 L 20 66 L 20 26 Z",
         },
+        {
+            id: "d20d",
+            sides: 20,
+            label: "d20d",
+            disadvantage: true,
+            path: "M 56 14 L 92 34 L 92 74 L 56 94 L 20 74 L 20 34 Z",
+            bgPath: "M 44 22 L 80 42 L 80 82 L 44 102 L 8 82 L 8 42 Z",
+        },
         { id: "d100", sides: 100, label: "d100", path: "M 50 12 A 38 38 0 1 0 50 88 A 38 38 0 1 0 50 12 Z" },
     ];
 
@@ -36,7 +44,8 @@
             type="button"
             class="die-button"
             class:advantage={die.advantage}
-            title={die.advantage ? "Add d20 with advantage (d20a)" : `Add ${die.label}`}
+            class:disadvantage={die.disadvantage}
+            title={die.advantage ? "Add d20 with advantage (d20a)" : die.disadvantage ? "Add d20 with disadvantage (d20d)" : `Add ${die.label}`}
             on:click={() => handleClick(die.id)}
         >
             <svg class="die-icon" viewBox="0 0 100 100">
@@ -46,11 +55,11 @@
                 <path class="die-shape" d={die.path} />
                 <text
                     class="die-label"
-                    x={die.id === "d20a" ? 48 : 50}
+                    x={die.id === "d20a" ? 48 : die.id === "d20d" ? 52 : 50}
                     y={die.id === "d4" ? 64 : 54}
                     text-anchor="middle"
                     dominant-baseline="central"
-                    font-size={die.id === "d20a" ? 34 : die.id === "d100" ? 36 : 46}
+                    font-size={die.id === "d20a" || die.id === "d20d" ? 34 : die.id === "d100" ? 36 : 46}
                 >
                     {die.label}
                 </text>
@@ -160,6 +169,18 @@
                     fill: #fff;
                 }
             }
+
+            &.disadvantage {
+                .die-shape {
+                    fill: #ef4444;
+                    opacity: 0.5;
+                    filter: drop-shadow(0 0 8px rgba(239, 68, 68, 0.7));
+                }
+
+                .die-label {
+                    fill: #fff;
+                }
+            }
         }
 
         &:active {
@@ -187,6 +208,15 @@
 
         &.advantage .die-shape {
             fill: color-mix(in hsl, #f59e0b, var(--theme-text-color, #fff) 40%);
+            opacity: 0.3;
+
+            &.die-bg-shape {
+                opacity: 0.18;
+            }
+        }
+
+        &.disadvantage .die-shape {
+            fill: color-mix(in hsl, #ef4444, var(--theme-text-color, #fff) 40%);
             opacity: 0.3;
 
             &.die-bg-shape {

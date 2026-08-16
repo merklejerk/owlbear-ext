@@ -157,9 +157,11 @@ describe('rolls parser & evaluator', () => {
             expect(normalizeRollExpression('5 - 5')).toBe('');
         });
 
-        it('normalizes advantage roll expressions', () => {
+        it('normalizes advantage and disadvantage roll expressions', () => {
             expect(normalizeRollExpression('d20a + d6 + d6')).toBe('d20a + 2d6');
             expect(normalizeRollExpression('d20a + 5')).toBe('d20a + 5');
+            expect(normalizeRollExpression('d20d + d6 + d6')).toBe('d20d + 2d6');
+            expect(normalizeRollExpression('d20d + 3')).toBe('d20d + 3');
         });
 
         it('gracefully returns unparseable or partial input', () => {
@@ -181,6 +183,9 @@ describe('rolls parser & evaluator', () => {
             expect(deleteLastTerm('2d6 + 5 + ')).toBe('2d6');
             expect(deleteLastTerm('d20a + 3d8')).toBe('d20a + 2d8');
             expect(deleteLastTerm('d20a + d8')).toBe('d20a');
+            expect(deleteLastTerm('d20d + 2d4')).toBe('d20d + d4');
+            expect(deleteLastTerm('d20d + d4')).toBe('d20d');
+            expect(deleteLastTerm('d20d')).toBe('');
         });
 
         it('handles fallback for invalid syntax', () => {

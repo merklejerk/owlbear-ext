@@ -50,8 +50,17 @@
             return;
         }
 
-        // Case 1: Incomplete trailing 'd' or count+'d' (e.g. "3d", "d")
-        const matchD = trimmed.match(/^(.*?)(\d*)\s*d$/i);
+        // Fast path: if the current input is already a valid expression, append and normalize
+        try {
+            parseRollSpec(trimmed);
+            rawInput = normalizeRollExpression(`${trimmed} + ${die}`);
+            return;
+        } catch {
+            // Not a complete expression yet, handle partial / incomplete input below
+        }
+
+        // Incomplete trailing 'd' or count+'d' (e.g. "3d", "d", "2d6 + 4d")
+        const matchD = trimmed.match(/^(.*?(?:^|[+\-*/,\s]))(\d*)\s*d$/i);
         if (matchD) {
             const prefix = matchD[1];
             const count = matchD[2];
@@ -62,14 +71,13 @@
             return;
         }
 
-        // Case 2: Strip trailing broken operators and extra whitespace (e.g. "2d6 +", "2d6 -")
+        // Strip trailing broken operators and extra whitespace (e.g. "2d6 +", "2d6 -")
         trimmed = trimmed.replace(/[+\-*/,\s]+$/, '');
         if (!trimmed) {
             rawInput = die;
             return;
         }
 
-        // Case 3: Normalize full expression with new die term
         const testInput = `${trimmed} + ${die}`;
         rawInput = normalizeRollExpression(testInput);
     }
