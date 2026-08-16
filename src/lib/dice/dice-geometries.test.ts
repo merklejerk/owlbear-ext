@@ -9,6 +9,7 @@ import {
     createD20Geometry,
     getDieDefinition,
     isSupportedDieSize,
+    D4_FACE_CORNERS,
 } from './dice-geometries';
 import { createCannonConvexPolyhedron } from './dice-cannon-shapes';
 
@@ -39,11 +40,57 @@ describe('dice geometries & face normals', () => {
         }
     });
 
-    it('creates valid D4, D8, D10, D12 geometries', () => {
+    it('creates valid D4 apex-read geometry with 4 upward apex vectors and consistent face corners', () => {
         const d4 = createD4Geometry(1.0);
         expect(d4.sides).toBe(4);
+        expect(d4.faceValues).toEqual([1, 2, 3, 4]);
         expect(d4.faceNormals.size).toBe(4);
 
+        // Every apex normal is unit length
+        for (const [val, normal] of d4.faceNormals) {
+            expect(val).toBeGreaterThanOrEqual(1);
+            expect(val).toBeLessThanOrEqual(4);
+            expect(normal.length()).toBeCloseTo(1.0, 3);
+        }
+
+        // For each of the 4 apexes pointing UP, verify that all 3 visible faces have that apex value at their peak corner
+        for (let rolledApex = 1; rolledApex <= 4; rolledApex++) {
+            const apexVec = d4.faceNormals.get(rolledApex)!;
+            const targetUp = new THREE.Vector3(0, 1, 0);
+            const quat = new THREE.Quaternion().setFromUnitVectors(apexVec, targetUp);
+
+            const pos = d4.geometry.attributes.position;
+            const p = new THREE.Vector3();
+
+            let visibleFaceCount = 0;
+            let hiddenFaceCount = 0;
+
+            for (let f = 0; f < 4; f++) {
+                let peakCornerIdx = -1;
+                for (let c = 0; c < 3; c++) {
+                    p.fromBufferAttribute(pos, f * 3 + c).applyQuaternion(quat);
+                    if (Math.abs(p.y - 1.0) < 0.05) {
+                        peakCornerIdx = c;
+                        break;
+                    }
+                }
+
+                if (peakCornerIdx !== -1) {
+                    visibleFaceCount++;
+                    // The number printed at this peak corner MUST equal rolledApex
+                    expect(D4_FACE_CORNERS[f][peakCornerIdx]).toBe(rolledApex);
+                } else {
+                    hiddenFaceCount++;
+                }
+            }
+
+            // Exactly 3 faces point toward this apex (visible) and 1 face is the bottom base (hidden)
+            expect(visibleFaceCount).toBe(3);
+            expect(hiddenFaceCount).toBe(1);
+        }
+    });
+
+    it('creates valid D8, D10, D12 geometries', () => {
         const d8 = createD8Geometry(1.0);
         expect(d8.sides).toBe(8);
         expect(d8.faceNormals.size).toBe(8);

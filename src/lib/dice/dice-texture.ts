@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { D4_FACE_CORNERS } from './dice-geometries';
 
 export interface DiceTheme {
     backgroundColor: string;
@@ -191,6 +192,66 @@ function hslToRgb(h: number, s: number, l: number): [number, number, number] {
 }
 
 /**
+ * Renders a crisp engraved numeral with drop shadow, border, and gradient fill.
+ */
+function drawFaceNumeral(
+    ctx: CanvasRenderingContext2D,
+    text: string,
+    x: number,
+    y: number,
+    fontSize: number,
+    fontName: string,
+    rotation: number = 0,
+    showUnderline: boolean = false,
+) {
+    ctx.save();
+    ctx.translate(x, y);
+    if (rotation !== 0) {
+        ctx.rotate(rotation);
+    }
+    ctx.font = `900 ${fontSize}px ${fontName}`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+
+    // Dark Engraved Trench Stroke
+    ctx.save();
+    ctx.lineJoin = 'round';
+    ctx.miterLimit = 2;
+    ctx.lineWidth = Math.max(3, fontSize * 0.12);
+    ctx.strokeStyle = 'rgba(0, 0, 0, 0.95)';
+    ctx.shadowColor = 'rgba(0, 0, 0, 0.95)';
+    ctx.shadowBlur = 4;
+    ctx.shadowOffsetY = 2;
+    ctx.strokeText(text, 0, 1);
+    ctx.restore();
+
+    // Inlaid Enamel/Gold Fill
+    const textGrad = ctx.createLinearGradient(0, -fontSize * 0.45, 0, fontSize * 0.45);
+    textGrad.addColorStop(0, '#ffffff');
+    textGrad.addColorStop(0.5, '#ffffff');
+    textGrad.addColorStop(1, '#f0ede0');
+
+    ctx.fillStyle = textGrad;
+    ctx.fillText(text, 0, 0);
+
+    if (showUnderline) {
+        const underlineWidth = fontSize * 0.42;
+        const underlineHeight = Math.max(3, fontSize * 0.10);
+        const underlineY = fontSize * 0.36;
+        const underlineX = -underlineWidth / 2;
+
+        ctx.save();
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.95)';
+        ctx.fillRect(underlineX - 2, underlineY - 1, underlineWidth + 4, underlineHeight + 3);
+        ctx.restore();
+
+        ctx.fillStyle = textGrad;
+        ctx.fillRect(underlineX, underlineY, underlineWidth, underlineHeight);
+    }
+    ctx.restore();
+}
+
+/**
  * Procedurally generates a 2D canvas texture atlas with subtle marble resin
  * and high-contrast engraved inlaid numerals.
  */
@@ -200,6 +261,7 @@ export function createDiceTextureAtlas(
     rows: number,
     theme: DiceTheme = DEFAULT_THEME,
     cellSize: number = 256,
+    sides?: number,
 ): THREE.CanvasTexture {
     if (typeof document === 'undefined') {
         return new THREE.CanvasTexture({} as HTMLCanvasElement);
@@ -215,7 +277,7 @@ export function createDiceTextureAtlas(
     }
 
     const baseHue = parseHueFromHsl(theme.backgroundColor, 265);
-    const fontName = theme.fontFamily ?? DEFAULT_THEME.fontFamily;
+    const fontName = theme.fontFamily ?? DEFAULT_THEME.fontFamily ?? 'Inter, sans-serif';
 
     // Palette: Deep, saturated base tone + subtle translucent cloud + soft delicate vein
     const [rBase, gBase, bBase] = hslToRgb(baseHue, 65, 17);
@@ -289,52 +351,22 @@ export function createDiceTextureAtlas(
         ctx.drawImage(offscreen, startX, startY, cellSize, cellSize);
 
         // 2. High-Contrast, Crisp Inlaid Numerals
-        const text = val.toString();
-        const fontSize = Math.floor(cellSize * (text.length > 2 ? 0.36 : 0.46));
-        ctx.font = `900 ${fontSize}px ${fontName}`;
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
+        if (sides === 4 && f < D4_FACE_CORNERS.length) {
+            const [topVal, blVal, brVal] = D4_FACE_CORNERS[f];
+            const fontSize = Math.floor(cellSize * 0.22);
 
-        // Dark Engraved Trench Stroke
-        ctx.save();
-        ctx.lineJoin = 'round';
-        ctx.miterLimit = 2;
-        ctx.lineWidth = Math.max(4, fontSize * 0.12);
-        ctx.strokeStyle = 'rgba(0, 0, 0, 0.95)';
-        ctx.shadowColor = 'rgba(0, 0, 0, 0.95)';
-        ctx.shadowBlur = 5;
-        ctx.shadowOffsetY = 2.5;
-        ctx.strokeText(text, centerX, centerY + 1);
-        ctx.restore();
+            // Top apex numeral
+            drawFaceNumeral(ctx, topVal.toString(), centerX, centerY - cellSize * 0.22, fontSize, fontName, 0);
 
-        // Inlaid Enamel/Gold Fill
-        const textGrad = ctx.createLinearGradient(
-            centerX,
-            centerY - fontSize * 0.45,
-            centerX,
-            centerY + fontSize * 0.45,
-        );
-        textGrad.addColorStop(0, '#ffffff');
-        textGrad.addColorStop(0.5, '#ffffff');
-        textGrad.addColorStop(1, '#f0ede0');
+            // Bottom-left apex numeral
+            drawFaceNumeral(ctx, blVal.toString(), centerX - cellSize * 0.19, centerY + cellSize * 0.11, fontSize, fontName, (-2 * Math.PI) / 3);
 
-        ctx.fillStyle = textGrad;
-        ctx.fillText(text, centerX, centerY);
-
-        // Underline for 6 and 9
-        if (val === 6 || val === 9) {
-            const underlineWidth = fontSize * 0.42;
-            const underlineHeight = Math.max(4, fontSize * 0.10);
-            const underlineY = centerY + fontSize * 0.36;
-            const underlineX = centerX - underlineWidth / 2;
-
-            ctx.save();
-            ctx.fillStyle = 'rgba(0, 0, 0, 0.95)';
-            ctx.fillRect(underlineX - 2, underlineY - 1, underlineWidth + 4, underlineHeight + 3);
-            ctx.restore();
-
-            ctx.fillStyle = textGrad;
-            ctx.fillRect(underlineX, underlineY, underlineWidth, underlineHeight);
+            // Bottom-right apex numeral
+            drawFaceNumeral(ctx, brVal.toString(), centerX + cellSize * 0.19, centerY + cellSize * 0.11, fontSize, fontName, (2 * Math.PI) / 3);
+        } else {
+            const text = val.toString();
+            const fontSize = Math.floor(cellSize * (text.length > 2 ? 0.36 : 0.46));
+            drawFaceNumeral(ctx, text, centerX, centerY, fontSize, fontName, 0, val === 6 || val === 9);
         }
     }
 
@@ -346,6 +378,48 @@ export function createDiceTextureAtlas(
 }
 
 /**
+ * Engraves a recessed numeral groove into the normal heightmap buffer.
+ */
+function engraveHeightmapNumeral(
+    hCtx: CanvasRenderingContext2D,
+    text: string,
+    x: number,
+    y: number,
+    fontSize: number,
+    rotation: number = 0,
+    showUnderline: boolean = false,
+) {
+    hCtx.save();
+    hCtx.translate(x, y);
+    if (rotation !== 0) {
+        hCtx.rotate(rotation);
+    }
+    hCtx.font = `900 ${fontSize}px Inter, sans-serif`;
+    hCtx.textAlign = 'center';
+    hCtx.textBaseline = 'middle';
+
+    hCtx.save();
+    hCtx.lineJoin = 'round';
+    hCtx.lineWidth = Math.max(4, fontSize * 0.12);
+    hCtx.strokeStyle = 'rgba(15, 15, 15, 0.90)';
+    hCtx.strokeText(text, 0, 1);
+
+    hCtx.fillStyle = 'rgba(25, 25, 25, 0.95)';
+    hCtx.fillText(text, 0, 1);
+    hCtx.restore();
+
+    if (showUnderline) {
+        const underlineWidth = fontSize * 0.42;
+        const underlineHeight = Math.max(4, fontSize * 0.10);
+        const underlineY = fontSize * 0.36;
+        const underlineX = -underlineWidth / 2;
+        hCtx.fillStyle = 'rgba(25, 25, 25, 0.95)';
+        hCtx.fillRect(underlineX - 2, underlineY - 1, underlineWidth + 4, underlineHeight + 2);
+    }
+    hCtx.restore();
+}
+
+/**
  * Procedurally generates a tangent-space normal map atlas featuring authentic tiny worn stone pits,
  * random tumbling hairline scratches, and engraved numeral bevels.
  */
@@ -354,6 +428,7 @@ export function createDiceNormalMapAtlas(
     cols: number,
     rows: number,
     cellSize: number = 256,
+    sides?: number,
 ): THREE.CanvasTexture {
     if (typeof document === 'undefined') {
         return new THREE.CanvasTexture({} as HTMLCanvasElement);
@@ -428,9 +503,6 @@ export function createDiceNormalMapAtlas(
     }
 
     // Step 1c: Engrave recessed numerals into the heightmap
-    hCtx.textAlign = 'center';
-    hCtx.textBaseline = 'middle';
-
     for (let f = 0; f < faceValues.length; f++) {
         const val = faceValues[f];
         const col = f % cols;
@@ -438,28 +510,22 @@ export function createDiceNormalMapAtlas(
         const centerX = col * cellSize + cellSize / 2;
         const centerY = row * cellSize + cellSize / 2;
 
-        const text = val.toString();
-        const fontSize = Math.floor(cellSize * (text.length > 2 ? 0.36 : 0.46));
-        hCtx.font = `900 ${fontSize}px Inter, sans-serif`;
+        if (sides === 4 && f < D4_FACE_CORNERS.length) {
+            const [topVal, blVal, brVal] = D4_FACE_CORNERS[f];
+            const fontSize = Math.floor(cellSize * 0.22);
 
-        // Engraved text groove with smooth bevel in heightmap
-        hCtx.save();
-        hCtx.lineJoin = 'round';
-        hCtx.lineWidth = Math.max(5, fontSize * 0.12);
-        hCtx.strokeStyle = 'rgba(15, 15, 15, 0.90)';
-        hCtx.strokeText(text, centerX, centerY + 1);
+            // Top apex numeral
+            engraveHeightmapNumeral(hCtx, topVal.toString(), centerX, centerY - cellSize * 0.22, fontSize, 0);
 
-        hCtx.fillStyle = 'rgba(25, 25, 25, 0.95)';
-        hCtx.fillText(text, centerX, centerY + 1);
-        hCtx.restore();
+            // Bottom-left apex numeral
+            engraveHeightmapNumeral(hCtx, blVal.toString(), centerX - cellSize * 0.19, centerY + cellSize * 0.11, fontSize, (-2 * Math.PI) / 3);
 
-        if (val === 6 || val === 9) {
-            const underlineWidth = fontSize * 0.42;
-            const underlineHeight = Math.max(4, fontSize * 0.10);
-            const underlineY = centerY + fontSize * 0.36;
-            const underlineX = centerX - underlineWidth / 2;
-            hCtx.fillStyle = 'rgba(25, 25, 25, 0.95)';
-            hCtx.fillRect(underlineX - 2, underlineY, underlineWidth + 4, underlineHeight + 2);
+            // Bottom-right apex numeral
+            engraveHeightmapNumeral(hCtx, brVal.toString(), centerX + cellSize * 0.19, centerY + cellSize * 0.11, fontSize, (2 * Math.PI) / 3);
+        } else {
+            const text = val.toString();
+            const fontSize = Math.floor(cellSize * (text.length > 2 ? 0.36 : 0.46));
+            engraveHeightmapNumeral(hCtx, text, centerX, centerY, fontSize, 0, val === 6 || val === 9);
         }
     }
 
@@ -534,7 +600,7 @@ export function getNormalMapForDie(
     let normalMap: THREE.CanvasTexture;
     switch (sides) {
         case 4:
-            normalMap = createDiceNormalMapAtlas(faceValues, 2, 2);
+            normalMap = createDiceNormalMapAtlas(faceValues, 2, 2, 256, 4);
             break;
         case 6:
             normalMap = createDiceNormalMapAtlas(faceValues, 3, 2);
@@ -575,7 +641,7 @@ export function getTextureForDie(
     let texture: THREE.CanvasTexture;
     switch (sides) {
         case 4:
-            texture = createDiceTextureAtlas(faceValues, 2, 2, theme);
+            texture = createDiceTextureAtlas(faceValues, 2, 2, theme, 256, 4);
             break;
         case 6:
             texture = createDiceTextureAtlas(faceValues, 3, 2, theme);

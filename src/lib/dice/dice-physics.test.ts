@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import * as THREE from 'three';
-import { createD20Geometry, createD6Geometry } from './dice-geometries';
+import { createD20Geometry, createD6Geometry, createD4Geometry } from './dice-geometries';
 import {
     getRestingOrientationForFace,
     generateTimeReversalTrajectory,
@@ -9,6 +9,19 @@ import {
 } from './dice-physics';
 
 describe('time-reversal dice physics generator', () => {
+    it('accurately aligns all 4 apexes of D4 to world UP at rest', () => {
+        const d4 = createD4Geometry(1.0);
+        const targetUp = new THREE.Vector3(0, 1, 0);
+
+        for (let apex = 1; apex <= 4; apex++) {
+            const quat = getRestingOrientationForFace(d4, apex);
+            const localNormal = d4.faceNormals.get(apex)!.clone();
+            const worldNormal = localNormal.applyQuaternion(quat);
+
+            expect(worldNormal.dot(targetUp)).toBeCloseTo(1.0, 4);
+        }
+    });
+
     it('accurately aligns all 20 faces of D20 to world UP at rest', () => {
         const d20 = createD20Geometry(1.0);
         const targetUp = new THREE.Vector3(0, 1, 0);
@@ -77,18 +90,21 @@ describe('time-reversal dice physics generator', () => {
     it('simulates multiple dice with physical collisions and accurate target results', () => {
         const d20 = createD20Geometry(1.0);
         const d6 = createD6Geometry(1.0);
+        const d4 = createD4Geometry(1.0);
 
         const trajectories = generateMultiDiceTrajectories({
             items: [
                 { die: d20, targetResult: 20 },
                 { die: d6, targetResult: 6 },
+                { die: d4, targetResult: 3 },
             ],
             durationSeconds: 1.2,
         });
 
-        expect(trajectories.length).toBe(2);
+        expect(trajectories.length).toBe(3);
         expect(trajectories[0].targetResult).toBe(20);
         expect(trajectories[1].targetResult).toBe(6);
+        expect(trajectories[2].targetResult).toBe(3);
 
         // Verify die 1 lands on 20
         const d20LastFrame = trajectories[0].keyframes[trajectories[0].keyframes.length - 1];
@@ -101,6 +117,12 @@ describe('time-reversal dice physics generator', () => {
         const d6Quat = new THREE.Quaternion(...d6LastFrame.quaternion);
         const d6Normal = d6.faceNormals.get(6)!.clone().applyQuaternion(d6Quat);
         expect(d6Normal.dot(new THREE.Vector3(0, 1, 0))).toBeGreaterThan(0.70);
+
+        // Verify die 3 (D4) lands with apex 3 pointing straight UP
+        const d4LastFrame = trajectories[2].keyframes[trajectories[2].keyframes.length - 1];
+        const d4Quat = new THREE.Quaternion(...d4LastFrame.quaternion);
+        const d4Apex = d4.faceNormals.get(3)!.clone().applyQuaternion(d4Quat);
+        expect(d4Apex.dot(new THREE.Vector3(0, 1, 0))).toBeGreaterThan(0.70);
     });
 
     it('relaxes overlapping resting positions to guarantee physical clearance', () => {

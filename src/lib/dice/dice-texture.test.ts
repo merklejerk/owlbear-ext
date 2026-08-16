@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { createPlayerDiceTheme, DEFAULT_THEME, getNormalMapForDie } from './dice-texture';
+import { createPlayerDiceTheme, DEFAULT_THEME, getNormalMapForDie, getTextureForDie } from './dice-texture';
 
 describe('dice theme generator', () => {
     it('returns default theme when no player info provided', () => {
@@ -31,5 +31,18 @@ describe('dice theme generator', () => {
 
         expect(normal1).toBeDefined();
         expect(normal1).toBe(normal2); // verified memoized
+
+        const d4Values = [1, 2, 3, 4];
+        const d4Normal = getNormalMapForDie(4, d4Values);
+        expect(d4Normal).toBeDefined();
+    });
+
+    it('generates and memoizes procedural texture atlas for D4', () => {
+        const d4Values = [1, 2, 3, 4];
+        const tex1 = getTextureForDie(4, d4Values, DEFAULT_THEME);
+        const tex2 = getTextureForDie(4, d4Values, DEFAULT_THEME);
+
+        expect(tex1).toBeDefined();
+        expect(tex1).toBe(tex2);
     });
 });

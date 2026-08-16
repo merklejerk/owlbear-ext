@@ -112,33 +112,74 @@ export function computeProjectedTriangleUVs(
 }
 
 /**
- * Creates D4 Tetrahedron Geometry (4 triangular faces).
+ * 3-number corner assignments for each of the 4 triangular faces of a standard apex-read D4.
+ * Each entry is [topVal, bottomLeftVal, bottomRightVal].
+ */
+export const D4_FACE_CORNERS = [
+    [3, 4, 2],
+    [1, 4, 3],
+    [1, 2, 4],
+    [1, 3, 2],
+] as const;
+
+/**
+ * Creates D4 Tetrahedron Geometry (4 triangular faces with standard apex-read configuration).
  */
 export function createD4Geometry(radius: number = 1.0): DieDefinition {
-    const raw = new THREE.TetrahedronGeometry(radius, 0);
-    const rawGeom = raw.index ? raw.toNonIndexed() : raw;
-    const triangleCount = rawGeom.attributes.position.count / 3;
+    const k = radius / Math.sqrt(3);
 
-    const faceValues = [1, 2, 3, 4];
+    // 4 canonical tetrahedron vertices (apexes 1, 2, 3, 4)
+    const v1 = new THREE.Vector3(k, k, k);
+    const v2 = new THREE.Vector3(-k, -k, k);
+    const v3 = new THREE.Vector3(-k, k, -k);
+    const v4 = new THREE.Vector3(k, -k, -k);
+
+    // 4 non-indexed triangular faces wound counter-clockwise (outward normals)
+    // Face 0: opp v1, corners: top=v3, bl=v4, br=v2 (values 3, 4, 2)
+    // Face 1: opp v2, corners: top=v1, bl=v4, br=v3 (values 1, 4, 3)
+    // Face 2: opp v3, corners: top=v1, bl=v2, br=v4 (values 1, 2, 4)
+    // Face 3: opp v4, corners: top=v1, bl=v3, br=v2 (values 1, 3, 2)
+    const positions = new Float32Array([
+        // Face 0
+        v3.x, v3.y, v3.z,
+        v4.x, v4.y, v4.z,
+        v2.x, v2.y, v2.z,
+        // Face 1
+        v1.x, v1.y, v1.z,
+        v4.x, v4.y, v4.z,
+        v3.x, v3.y, v3.z,
+        // Face 2
+        v1.x, v1.y, v1.z,
+        v2.x, v2.y, v2.z,
+        v4.x, v4.y, v4.z,
+        // Face 3
+        v1.x, v1.y, v1.z,
+        v3.x, v3.y, v3.z,
+        v2.x, v2.y, v2.z,
+    ]);
+
+    const geom = new THREE.BufferGeometry();
+    geom.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+
     const cols = 2;
     const rows = 2;
+    const uvs = computeProjectedTriangleUVs(geom, cols, rows, 0.08);
+    geom.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+    geom.computeVertexNormals();
 
-    const uvs = computeProjectedTriangleUVs(rawGeom, cols, rows, 0.08);
-    rawGeom.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
-    rawGeom.computeVertexNormals();
-
-    const normals = computeTriangleFaceNormals(rawGeom);
+    // In an apex-read D4, faceNormals map stores the 4 upward apex vectors corresponding to results 1..4
     const faceNormals = new Map<number, THREE.Vector3>();
+    faceNormals.set(1, v1.clone().normalize());
+    faceNormals.set(2, v2.clone().normalize());
+    faceNormals.set(3, v3.clone().normalize());
+    faceNormals.set(4, v4.clone().normalize());
 
-    for (let f = 0; f < triangleCount; f++) {
-        const value = faceValues[f];
-        faceNormals.set(value, normals[f]);
-    }
+    const faceValues = [1, 2, 3, 4];
 
     return {
         sides: 4,
         radius,
-        geometry: rawGeom,
+        geometry: geom,
         faceNormals,
         faceValues,
     };
