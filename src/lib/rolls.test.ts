@@ -142,9 +142,9 @@ describe('rolls parser & evaluator', () => {
             expect(normalizeRollExpression('d20 + d20')).toBe('2d20');
         });
 
-        it('normalizes mixed dice expressions in canonical order', () => {
+        it('preserves term insertion order for mixed dice expressions', () => {
+            expect(normalizeRollExpression('d20 + d4 + d6')).toBe('d20 + d4 + d6');
             expect(normalizeRollExpression('d20 + d6 + d6 + d4')).toBe('d20 + 2d6 + d4');
-            expect(normalizeRollExpression('2d4 + d20 + 3d4')).toBe('d20 + 5d4');
         });
 
         it('normalizes constants and mixed arithmetic', () => {
@@ -168,16 +168,19 @@ describe('rolls parser & evaluator', () => {
     });
 
     describe('deleteLastTerm', () => {
-        it('deletes the last term from multi-term expressions', () => {
-            expect(deleteLastTerm('1d6 + 5 + 2d20')).toBe('d6 + 5');
-            expect(deleteLastTerm('d6 + 5')).toBe('d6');
-            expect(deleteLastTerm('d6')).toBe('');
+        it('steps down die counts before removing the term', () => {
+            expect(deleteLastTerm('d20 + d4 + 3d6')).toBe('d20 + d4 + 2d6');
+            expect(deleteLastTerm('d20 + d4 + 2d6')).toBe('d20 + d4 + d6');
+            expect(deleteLastTerm('d20 + d4 + d6')).toBe('d20 + d4');
+            expect(deleteLastTerm('d20 + d4')).toBe('d20');
+            expect(deleteLastTerm('d20')).toBe('');
             expect(deleteLastTerm('')).toBe('');
         });
 
         it('handles trailing operators and spaces', () => {
             expect(deleteLastTerm('2d6 + 5 + ')).toBe('2d6');
-            expect(deleteLastTerm('d20a + 3d8')).toBe('d20a');
+            expect(deleteLastTerm('d20a + 3d8')).toBe('d20a + 2d8');
+            expect(deleteLastTerm('d20a + d8')).toBe('d20a');
         });
 
         it('handles fallback for invalid syntax', () => {

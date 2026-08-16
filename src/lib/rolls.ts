@@ -142,7 +142,7 @@ function flattenAdditiveTerms(roll: Roll, sign: 1 | -1 = 1): FlatTerm[] {
 }
 
 /**
- * Normalizes an additive roll tree by combining like dice groups and constant literals.
+ * Normalizes an additive roll tree by combining adjacent/compatible terms without reordering dissimilar terms.
  */
 export function normalizeRoll(roll: Roll): Roll {
     if (!isBinaryRoll(roll) || (roll.mode !== BinaryRollMode.ADD && roll.mode !== BinaryRollMode.SUB)) {
@@ -150,68 +150,52 @@ export function normalizeRoll(roll: Roll): Roll {
     }
 
     const flat = flattenAdditiveTerms(roll);
-    const diceCounts = new Map<number, number>();
-    let constant = 0;
-    const otherTerms: FlatTerm[] = [];
-
-    for (const item of flat) {
-        if (typeof item.term === 'number') {
-            constant += item.sign * item.term;
-        } else if (isDiceGroup(item.term) && item.sign === 1) {
-            const count = item.term.results.length;
-            diceCounts.set(item.term.sides, (diceCounts.get(item.term.sides) ?? 0) + count);
-        } else {
-            otherTerms.push(item);
-        }
-    }
-
     const combinedTerms: FlatTerm[] = [];
 
-    // Add grouped dice terms
-    const sortedSides = Array.from(diceCounts.keys()).sort((a, b) => b - a);
-    for (const sides of sortedSides) {
-        const count = diceCounts.get(sides)!;
-        if (count > 0) {
-            combinedTerms.push({
-                term: { sides, results: new Array(count).fill(0) },
-                sign: 1,
-            });
+    for (const item of flat) {
+        if (combinedTerms.length === 0) {
+            combinedTerms.push(item);
+            continue;
         }
+
+        const prev = combinedTerms[combinedTerms.length - 1];
+
+        // 1. Both are constants: combine them
+        if (typeof prev.term === 'number' && typeof item.term === 'number') {
+            const prevVal = prev.sign * prev.term;
+            const curVal = item.sign * item.term;
+            const total = prevVal + curVal;
+            if (total === 0) {
+                combinedTerms.pop();
+            } else {
+                combinedTerms[combinedTerms.length - 1] = {
+                    term: Math.abs(total),
+                    sign: total > 0 ? 1 : -1,
+                };
+            }
+            continue;
+        }
+
+        // 2. Both are same standard dice groups with sign === 1: combine counts
+        if (isDiceGroup(prev.term) && isDiceGroup(item.term) &&
+            prev.term.sides === item.term.sides && prev.sign === 1 && item.sign === 1) {
+            const newCount = prev.term.results.length + item.term.results.length;
+            combinedTerms[combinedTerms.length - 1] = {
+                term: { sides: prev.term.sides, results: new Array(newCount).fill(0) },
+                sign: 1,
+            };
+            continue;
+        }
+
+        // 3. Otherwise, preserve sequence as a new term
+        combinedTerms.push(item);
     }
 
-    // Add other terms
-    combinedTerms.push(...otherTerms);
-
-    // Sort terms by dice sides descending so d20a, d20 come before smaller dice
-    function getTermSides(term: Roll): number {
-        if (isDiceGroup(term)) {
-            return term.sides;
-        }
-        if (isBinaryRoll(term)) {
-            if ((term.mode === BinaryRollMode.MAX || term.mode === BinaryRollMode.MIN) &&
-                isDiceGroup(term.rolls[0])) {
-                return term.rolls[0].sides;
-            }
-            return Math.max(getTermSides(term.rolls[0]), getTermSides(term.rolls[1]));
-        }
+    if (combinedTerms.length === 0) {
         return 0;
     }
 
-    combinedTerms.sort((a, b) => getTermSides(b.term) - getTermSides(a.term));
-
-    // Add combined constant if non-zero or if no other terms exist
-    if (constant !== 0 || combinedTerms.length === 0) {
-        if (combinedTerms.length === 0) {
-            return constant;
-        }
-        if (constant > 0) {
-            combinedTerms.push({ term: constant, sign: 1 });
-        } else {
-            combinedTerms.push({ term: Math.abs(constant), sign: -1 });
-        }
-    }
-
-    // Reconstruct binary roll chain
+    // Reconstruct binary roll chain in original sequence
     let resultRoll: Roll = combinedTerms[0].term;
     if (combinedTerms[0].sign === -1 && typeof resultRoll === 'number') {
         resultRoll = -resultRoll;
@@ -278,8 +262,8 @@ export function normalizeRollExpression(spec: string): string {
 }
 
 /**
- * Deletes the last term from a roll expression.
- * E.g. "1d6 + 5 + 2d20" -> "1d6 + 5", "1d6" -> ""
+ * Deletes or decrements the last term from a roll expression.
+ * E.g. "d20 + d4 + 3d6" -> "d20 + d4 + 2d6" -> "d20 + d4 + d6" -> "d20 + d4" -> "d20" -> ""
  */
 export function deleteLastTerm(spec: string): string {
     const trimmed = spec.trim().replace(/[+\-*/,\s]+$/, '');
@@ -292,11 +276,43 @@ export function deleteLastTerm(spec: string): string {
         const lastRoll = rolls[rolls.length - 1];
         const flat = flattenAdditiveTerms(lastRoll);
 
+        if (flat.length === 0) {
+            const remainingRolls = rolls.slice(0, -1);
+            return remainingRolls.map(r => formatRoll(r)).join(', ');
+        }
+
+        const lastItem = flat[flat.length - 1];
+
+        // If the last item is a DiceGroup with >1 dice, decrement count by 1
+        if (isDiceGroup(lastItem.term) && lastItem.term.results.length > 1) {
+            const newCount = lastItem.term.results.length - 1;
+            const updatedTerm: Roll = {
+                sides: lastItem.term.sides,
+                results: new Array(newCount).fill(0),
+            };
+            const updatedFlat = [...flat.slice(0, -1), { ...lastItem, term: updatedTerm }];
+            let reconstructed: Roll = updatedFlat[0].term;
+            if (updatedFlat[0].sign === -1 && typeof reconstructed === 'number') {
+                reconstructed = -reconstructed;
+            }
+            for (let i = 1; i < updatedFlat.length; i++) {
+                const { term, sign } = updatedFlat[i];
+                reconstructed = {
+                    mode: sign === 1 ? BinaryRollMode.ADD : BinaryRollMode.SUB,
+                    rolls: [reconstructed, term],
+                };
+            }
+            const remainingRolls = [...rolls.slice(0, -1), reconstructed];
+            return remainingRolls.map(r => formatRoll(r)).join(', ');
+        }
+
+        // If flat has only 1 term (and count <= 1), remove this roll entirely
         if (flat.length <= 1) {
             const remainingRolls = rolls.slice(0, -1);
             return remainingRolls.map(r => formatRoll(r)).join(', ');
         }
 
+        // Otherwise, pop the entire last item from the additive chain
         const remainingFlat = flat.slice(0, -1);
         let reconstructed: Roll = remainingFlat[0].term;
         if (remainingFlat[0].sign === -1 && typeof reconstructed === 'number') {
