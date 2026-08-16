@@ -14,6 +14,7 @@
 
     export let dice: RollItem[] = [{ sides: 20, result: 20 }];
     export let theme: DiceTheme = DEFAULT_THEME;
+    export let holdDuration: number = 2.5;
     export let onComplete: () => void = () => {};
 
     let container: HTMLDivElement;
@@ -170,7 +171,6 @@
         // Animation playback loop
         const startTime = performance.now();
         const maxDuration = Math.max(...activeDice.map(d => d.trajectory.duration));
-        const holdDuration = 1.8; // Stay at rest for 1.8s so players can read the result
         let completed = false;
 
         const pA = new THREE.Vector3();
