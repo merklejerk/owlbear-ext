@@ -130,6 +130,46 @@
         return tex;
     }
 
+    /**
+     * Procedurally generates a soft, wispy smoke puff / ash particle texture.
+     */
+    function createSmokeTexture(): THREE.CanvasTexture {
+        if (typeof document === 'undefined') {
+            return new THREE.CanvasTexture({} as HTMLCanvasElement);
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = 128;
+        canvas.height = 128;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+            return new THREE.CanvasTexture(canvas);
+        }
+
+        // Multiple overlapping soft radial puffs for cloudy volume
+        const puffs = [
+            { x: 64, y: 64, r: 56, a: 0.85 },
+            { x: 50, y: 52, r: 42, a: 0.55 },
+            { x: 78, y: 54, r: 40, a: 0.55 },
+            { x: 58, y: 76, r: 44, a: 0.55 },
+            { x: 74, y: 72, r: 42, a: 0.45 },
+        ];
+
+        for (const p of puffs) {
+            const grad = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.r);
+            grad.addColorStop(0.0, `rgba(235, 235, 250, ${p.a})`);
+            grad.addColorStop(0.35, `rgba(180, 180, 205, ${p.a * 0.7})`);
+            grad.addColorStop(0.7, `rgba(120, 120, 140, ${p.a * 0.3})`);
+            grad.addColorStop(1.0, 'rgba(60, 60, 80, 0.0)');
+            ctx.fillStyle = grad;
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+            ctx.fill();
+        }
+
+        const tex = new THREE.CanvasTexture(canvas);
+        return tex;
+    }
+
     onMount(() => {
         if (!container) return;
 
@@ -293,9 +333,10 @@
             });
         }
 
-        // Nat 20 Special Effects: Procedural textured shockwaves, spark burst, point lights & camera shake
+        // Special Effects: Nat 20 radiance & Nat 1 sad smoke puff
         const shockwaveTexture = createShockwaveTexture();
         const sparkTexture = createSparkTexture();
+        const smokeTexture = createSmokeTexture();
         const shockwavePlaneGeo = new THREE.PlaneGeometry(1, 1);
         const shockwaveMeshes: Array<{
             mesh: THREE.Mesh;
@@ -319,6 +360,20 @@
             count: number;
         }
         const sparkBursts: SparkBurst[] = [];
+
+        interface SmokeBurst {
+            points: THREE.Points;
+            geo: THREE.BufferGeometry;
+            mat: THREE.PointsMaterial;
+            initialPositions: Float32Array;
+            velocities: Float32Array;
+            startTime: number;
+            duration: number;
+            count: number;
+            baseSize: number;
+        }
+        const smokeBursts: SmokeBurst[] = [];
+
         const nat20Lights: Array<{
             epicenterLight: THREE.PointLight;
             glintLight: THREE.PointLight;
@@ -461,6 +516,118 @@
                     startTime: settleTime,
                 });
             }
+
+            if (item.sides === 20 && item.result === 1) {
+                const restX = lastFrame.position[0];
+                const restY = lastFrame.position[1];
+                const restZ = lastFrame.position[2];
+                const settleTime = traj.duration;
+                const baseR = def.radius;
+
+                // 1. Billowing Volumetric Smoke Plume
+                const smokeCount = 36;
+                const smokePositions = new Float32Array(smokeCount * 3);
+                const smokeInitPositions = new Float32Array(smokeCount * 3);
+                const smokeVelocities = new Float32Array(smokeCount * 3);
+
+                for (let s = 0; s < smokeCount; s++) {
+                    const angle = Math.random() * Math.PI * 2;
+                    const rOffset = Math.random() * baseR * 0.5;
+                    const ox = Math.cos(angle) * rOffset;
+                    const oy = restY + baseR * 0.2 + Math.random() * 0.2;
+                    const oz = Math.sin(angle) * rOffset;
+
+                    smokePositions[s * 3] = restX + ox;
+                    smokePositions[s * 3 + 1] = oy;
+                    smokePositions[s * 3 + 2] = restZ + oz;
+
+                    smokeInitPositions[s * 3] = restX + ox;
+                    smokeInitPositions[s * 3 + 1] = oy;
+                    smokeInitPositions[s * 3 + 2] = restZ + oz;
+
+                    const speed = 0.35 + Math.random() * 0.75;
+                    smokeVelocities[s * 3] = Math.cos(angle) * speed;
+                    smokeVelocities[s * 3 + 1] = 1.4 + Math.random() * 2.0; // Vigorous upward plume
+                    smokeVelocities[s * 3 + 2] = Math.sin(angle) * speed;
+                }
+
+                const smokeGeo = new THREE.BufferGeometry();
+                smokeGeo.setAttribute('position', new THREE.BufferAttribute(smokePositions, 3));
+
+                const smokeMat = new THREE.PointsMaterial({
+                    map: smokeTexture,
+                    size: baseR * 1.8,
+                    transparent: true,
+                    opacity: 0,
+                    depthWrite: false,
+                });
+
+                const smokePoints = new THREE.Points(smokeGeo, smokeMat);
+                smokePoints.visible = false;
+                scene.add(smokePoints);
+
+                smokeBursts.push({
+                    points: smokePoints,
+                    geo: smokeGeo,
+                    mat: smokeMat,
+                    initialPositions: smokeInitPositions,
+                    velocities: smokeVelocities,
+                    startTime: settleTime,
+                    duration: 1.55,
+                    count: smokeCount,
+                    baseSize: baseR * 1.8,
+                });
+
+                // 2. Dying Red/Orange Ember Sparks Sputtering Upward
+                const emberCount = 14;
+                const emberPositions = new Float32Array(emberCount * 3);
+                const emberInitPositions = new Float32Array(emberCount * 3);
+                const emberVelocities = new Float32Array(emberCount * 3);
+
+                for (let e = 0; e < emberCount; e++) {
+                    emberPositions[e * 3] = restX;
+                    emberPositions[e * 3 + 1] = restY + baseR * 0.3;
+                    emberPositions[e * 3 + 2] = restZ;
+
+                    emberInitPositions[e * 3] = restX;
+                    emberInitPositions[e * 3 + 1] = restY + baseR * 0.3;
+                    emberInitPositions[e * 3 + 2] = restZ;
+
+                    const angle = Math.random() * Math.PI * 2;
+                    const speed = 0.5 + Math.random() * 1.0;
+                    emberVelocities[e * 3] = Math.cos(angle) * speed;
+                    emberVelocities[e * 3 + 1] = 1.0 + Math.random() * 1.6;
+                    emberVelocities[e * 3 + 2] = Math.sin(angle) * speed;
+                }
+
+                const emberGeo = new THREE.BufferGeometry();
+                emberGeo.setAttribute('position', new THREE.BufferAttribute(emberPositions, 3));
+
+                const emberMat = new THREE.PointsMaterial({
+                    map: sparkTexture,
+                    size: baseR * 0.32,
+                    color: 0xff3b11,
+                    transparent: true,
+                    opacity: 0,
+                    blending: THREE.AdditiveBlending,
+                    depthWrite: false,
+                });
+
+                const emberPoints = new THREE.Points(emberGeo, emberMat);
+                emberPoints.visible = false;
+                scene.add(emberPoints);
+
+                sparkBursts.push({
+                    points: emberPoints,
+                    geo: emberGeo,
+                    mat: emberMat,
+                    initialPositions: emberInitPositions,
+                    velocities: emberVelocities,
+                    startTime: settleTime,
+                    duration: 0.85,
+                    count: emberCount,
+                });
+            }
         }
 
         // Animation playback loop
@@ -476,29 +643,8 @@
         const animate = () => {
             const elapsed = (performance.now() - startTime) / 1000;
 
-            // Camera Impact Punch (kinematic physical weight on Nat 20 landing)
-            let maxCamShake = 0;
-            for (let i = 0; i < count; i++) {
-                const item = supportedDice[i];
-                const die = activeDice[i];
-                if (item.sides === 20 && item.result === 20) {
-                    const dt = elapsed - die.trajectory.duration;
-                    if (dt >= 0 && dt <= 0.38) {
-                        const shake = Math.exp(-dt * 13) * Math.sin(dt * 36) * 0.38 * (baseRadius / 1.0);
-                        if (Math.abs(shake) > Math.abs(maxCamShake)) {
-                            maxCamShake = shake;
-                        }
-                    }
-                }
-            }
-
-            if (Math.abs(maxCamShake) > 0.001) {
-                camera.position.set(0, 18 - maxCamShake, 3.5 + maxCamShake * 0.4);
-                camera.lookAt(0, 0, 0);
-            } else {
-                camera.position.set(0, 18, 3.5);
-                camera.lookAt(0, 0, 0);
-            }
+            camera.position.set(0, 18, 3.5);
+            camera.lookAt(0, 0, 0);
 
             for (let i = 0; i < activeDice.length; i++) {
                 const die = activeDice[i];
@@ -530,6 +676,32 @@
                             0.35 + 0.65 * impactFlash,
                         );
                         die.edgeMaterial.opacity = Math.min(1.0, 0.85 + 0.15 * impactFlash + breathe);
+                    }
+
+                    // Nat 1 resting state: sputtering ember numeral flicker, shudder, then cold desaturation
+                    if (item.sides === 20 && item.result === 1) {
+                        const dt = elapsed - traj.duration;
+                        const fade = Math.max(0, 1 - dt / 0.85);
+
+                        // Sputtering, dying red ember numeral flicker (like a dying neon sign / match)
+                        const flicker = Math.sin(dt * 38) > 0 ? (0.7 + Math.random() * 0.3) : 0.1;
+                        const mat = die.mesh.material as THREE.MeshPhysicalMaterial;
+                        mat.emissive.setHex(0xef4444);
+                        mat.emissiveIntensity = 2.2 * flicker * fade;
+
+                        // Edge lines sputter crimson then extinguish into cold charcoal
+                        die.edgeMaterial.color.setRGB(
+                            0.75 * fade + 0.15,
+                            0.15 * fade + 0.15,
+                            0.15 * fade + 0.20,
+                        );
+                        die.edgeMaterial.opacity = 0.85 * fade + 0.25;
+
+                        // Disappointed shudder on impact
+                        if (dt >= 0 && dt <= 0.35) {
+                            const quiver = Math.sin(dt * 42) * Math.exp(-dt * 12) * 0.04;
+                            die.mesh.rotation.z += quiver;
+                        }
                     }
                 } else {
                     // Interpolate between keyframes
@@ -588,6 +760,32 @@
                     sb.points.visible = true;
                 } else {
                     sb.points.visible = false;
+                }
+            }
+
+            // Animate Nat 1 gentle smoke puff
+            for (const smk of smokeBursts) {
+                const dt = elapsed - smk.startTime;
+                if (dt >= 0 && dt <= smk.duration) {
+                    const posAttr = smk.geo.attributes.position;
+                    const posArr = posAttr.array as Float32Array;
+
+                    for (let s = 0; s < smk.count; s++) {
+                        const idx = s * 3;
+                        posArr[idx] = smk.initialPositions[idx] + smk.velocities[idx] * dt * 0.85;
+                        const vy = smk.velocities[idx + 1];
+                        posArr[idx + 1] = smk.initialPositions[idx + 1] + vy * dt * (1 - 0.3 * (dt / smk.duration));
+                        posArr[idx + 2] = smk.initialPositions[idx + 2] + smk.velocities[idx + 2] * dt * 0.85;
+                    }
+                    posAttr.needsUpdate = true;
+                    const progress = dt / smk.duration;
+                    smk.mat.size = smk.baseSize * (1.0 + progress * 0.8);
+                    const fadeIn = Math.min(1.0, progress / 0.15);
+                    const fadeOut = Math.pow(1 - progress, 1.5);
+                    smk.mat.opacity = 0.65 * fadeIn * fadeOut;
+                    smk.points.visible = true;
+                } else {
+                    smk.points.visible = false;
                 }
             }
 
@@ -666,6 +864,7 @@
             // Resource cleanup
             shockwaveTexture.dispose();
             sparkTexture.dispose();
+            smokeTexture.dispose();
             shockwavePlaneGeo.dispose();
             for (const mat of shockwaveMaterials) {
                 mat.dispose();
@@ -674,6 +873,11 @@
             for (const sb of sparkBursts) {
                 sb.geo.dispose();
                 sb.mat.dispose();
+            }
+
+            for (const smk of smokeBursts) {
+                smk.geo.dispose();
+                smk.mat.dispose();
             }
 
             for (const nl of nat20Lights) {
