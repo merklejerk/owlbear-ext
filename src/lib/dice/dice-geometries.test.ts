@@ -90,7 +90,7 @@ describe('dice geometries & face normals', () => {
         }
     });
 
-    it('creates valid D8, D10, D12 geometries', () => {
+    it('creates valid D8, D10, D12 geometries with perfectly planar D10 kite faces', () => {
         const d8 = createD8Geometry(1.0);
         expect(d8.sides).toBe(8);
         expect(d8.faceNormals.size).toBe(8);
@@ -98,6 +98,21 @@ describe('dice geometries & face normals', () => {
         const d10 = createD10Geometry(1.0);
         expect(d10.sides).toBe(10);
         expect(d10.faceNormals.size).toBe(10);
+
+        // Verify that every D10 kite face consists of 2 triangles with identical normal vectors
+        const normalsAttr = d10.geometry.attributes.normal;
+        expect(normalsAttr).toBeDefined();
+        // 10 faces * 2 triangles * 3 vertices = 60 vertices
+        expect(normalsAttr.count).toBe(60);
+
+        for (let faceIdx = 0; faceIdx < 10; faceIdx++) {
+            const startVert = faceIdx * 6;
+            const n0 = new THREE.Vector3(normalsAttr.getX(startVert), normalsAttr.getY(startVert), normalsAttr.getZ(startVert));
+            for (let v = 1; v < 6; v++) {
+                const nv = new THREE.Vector3(normalsAttr.getX(startVert + v), normalsAttr.getY(startVert + v), normalsAttr.getZ(startVert + v));
+                expect(nv.dot(n0)).toBeCloseTo(1.0, 5);
+            }
+        }
 
         const d12 = createD12Geometry(1.0);
         expect(d12.sides).toBe(12);

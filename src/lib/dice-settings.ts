@@ -56,12 +56,25 @@ export function normalizeHexColor(raw: string): string | null {
     return null;
 }
 
+function getColorKey(playerId?: string | null): string {
+    return playerId ? `${COLOR_STORAGE_KEY}:${playerId}` : COLOR_STORAGE_KEY;
+}
+
 /**
- * Retrieves the current dice color override from localStorage, or null if none is set.
+ * Retrieves the current dice color override from localStorage for a specific player (or global),
+ * or null if none is set.
  */
-export function getDiceColorOverride(): string | null {
+export function getDiceColorOverride(playerId?: string | null): string | null {
     if (typeof window === 'undefined' || !window.localStorage) return null;
     try {
+        if (playerId) {
+            const playerVal = window.localStorage.getItem(getColorKey(playerId));
+            if (playerVal) {
+                const norm = normalizeHexColor(playerVal);
+                if (norm) return norm;
+            }
+        }
+        // Fallback to legacy unkeyed preference if exists
         const val = window.localStorage.getItem(COLOR_STORAGE_KEY);
         if (!val) return null;
         return normalizeHexColor(val);
@@ -71,20 +84,24 @@ export function getDiceColorOverride(): string | null {
 }
 
 /**
- * Sets or clears the dice color override in localStorage.
+ * Sets or clears the dice color override in localStorage for a specific player.
  */
-export function setDiceColorOverride(color: string | null): void {
+export function setDiceColorOverride(color: string | null, playerId?: string | null): void {
     if (typeof window === 'undefined' || !window.localStorage) return;
     try {
+        const key = getColorKey(playerId);
         if (!color) {
-            window.localStorage.removeItem(COLOR_STORAGE_KEY);
+            window.localStorage.removeItem(key);
+            if (playerId) {
+                window.localStorage.removeItem(COLOR_STORAGE_KEY);
+            }
             return;
         }
         const normalized = normalizeHexColor(color);
         if (normalized) {
-            window.localStorage.setItem(COLOR_STORAGE_KEY, normalized);
+            window.localStorage.setItem(key, normalized);
         } else {
-            window.localStorage.removeItem(COLOR_STORAGE_KEY);
+            window.localStorage.removeItem(key);
         }
     } catch {
         // Ignore localStorage quota / security exceptions

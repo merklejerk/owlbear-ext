@@ -64,17 +64,25 @@ describe('dice-settings', () => {
             expect(normalizeHexColor('#gggggg')).toBeNull();
         });
 
-        it('gets, sets, and clears dice color override', () => {
+        it('gets, sets, and clears dice color override globally and per-player', () => {
             expect(getDiceColorOverride()).toBeNull();
+            expect(getDiceColorOverride('player-1')).toBeNull();
 
-            setDiceColorOverride('#4488ff');
-            expect(getDiceColorOverride()).toBe('#4488ff');
+            // Set for player-1
+            setDiceColorOverride('#4488ff', 'player-1');
+            expect(getDiceColorOverride('player-1')).toBe('#4488ff');
+            // player-2 has no override
+            expect(getDiceColorOverride('player-2')).toBeNull();
 
-            setDiceColorOverride('f0a');
-            expect(getDiceColorOverride()).toBe('#ff00aa');
+            // Set for player-2
+            setDiceColorOverride('#ff00aa', 'player-2');
+            expect(getDiceColorOverride('player-1')).toBe('#4488ff');
+            expect(getDiceColorOverride('player-2')).toBe('#ff00aa');
 
-            setDiceColorOverride(null);
-            expect(getDiceColorOverride()).toBeNull();
+            // Clear player-1
+            setDiceColorOverride(null, 'player-1');
+            expect(getDiceColorOverride('player-1')).toBeNull();
+            expect(getDiceColorOverride('player-2')).toBe('#ff00aa');
         });
     });
 });

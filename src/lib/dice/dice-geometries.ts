@@ -269,16 +269,18 @@ export function createD8Geometry(radius: number = 1.0): DieDefinition {
 }
 
 /**
- * Creates D10 Pentagonal Trapezohedron Geometry (10 congruent, symmetric kite-shaped faces).
+ * Creates D10 Pentagonal Trapezohedron Geometry (10 congruent, symmetric, perfectly planar kite-shaped faces).
  */
 export function createD10Geometry(radius: number = 1.0): DieDefinition {
     const faceValues = Array.from({ length: 10 }, (_, i) => i + 1);
     const cols = 5;
     const rows = 2;
 
-    const hPole = radius * 1.12;
-    const hEquator = radius * 0.18;
-    const rEquator = radius * 0.88;
+    const hPole = radius * 1.08;
+    const rEquator = radius * 0.90;
+    // For a regular pentagonal trapezohedron with congruent, perfectly planar kite faces:
+    // hPole / hEquator = (1 + cos(36°)) / (1 - cos(36°)) = 5 + 2 * sqrt(5) ≈ 9.472136
+    const hEquator = hPole / (5 + 2 * Math.sqrt(5));
 
     const topPole = new THREE.Vector3(0, hPole, 0);
     const bottomPole = new THREE.Vector3(0, -hPole, 0);
@@ -296,6 +298,7 @@ export function createD10Geometry(radius: number = 1.0): DieDefinition {
     }
 
     const positions: number[] = [];
+    const normalsList: number[] = [];
     const uvs: number[] = [];
     const faceNormals = new Map<number, THREE.Vector3>();
 
@@ -303,6 +306,7 @@ export function createD10Geometry(radius: number = 1.0): DieDefinition {
         vA: THREE.Vector3,
         vB: THREE.Vector3,
         vC: THREE.Vector3,
+        faceNormal: THREE.Vector3,
         center: THREE.Vector3,
         xLocal: THREE.Vector3,
         yLocal: THREE.Vector3,
@@ -328,6 +332,7 @@ export function createD10Geometry(radius: number = 1.0): DieDefinition {
 
         for (const v of [p0, p1, p2]) {
             positions.push(v.x, v.y, v.z);
+            normalsList.push(faceNormal.x, faceNormal.y, faceNormal.z);
             const rel = new THREE.Vector3().subVectors(v, center);
             const u = uMid + rel.dot(xLocal) * scale * uSpan * 2;
             const vCoord = vMid + rel.dot(yLocal) * scale * vSpan * 2;
@@ -335,7 +340,7 @@ export function createD10Geometry(radius: number = 1.0): DieDefinition {
         }
     }
 
-    // 10 congruent kite faces: 5 upper kites (f = 0..4) and 5 lower kites (f = 5..9)
+    // 10 congruent planar kite faces: 5 upper kites (f = 0..4) and 5 lower kites (f = 5..9)
     for (let f = 0; f < 10; f++) {
         const col = f % cols;
         const row = Math.floor(f / cols);
@@ -353,7 +358,11 @@ export function createD10Geometry(radius: number = 1.0): DieDefinition {
             const pRight = eqVertices[(k + 2) % 10];
 
             const center = new THREE.Vector3().add(pApex).add(pLeft).add(pBottom).add(pRight).multiplyScalar(0.25);
-            const normal = center.clone().normalize();
+            // Calculate exact planar kite normal from diagonals
+            const diagLong = new THREE.Vector3().subVectors(pBottom, pApex);
+            const diagWide = new THREE.Vector3().subVectors(pRight, pLeft);
+            const normal = new THREE.Vector3().crossVectors(diagWide, diagLong).normalize();
+            if (normal.dot(center) < 0) normal.negate();
 
             const yLocal = new THREE.Vector3().subVectors(pApex, center).normalize();
             const xLocal = new THREE.Vector3().crossVectors(yLocal, normal).normalize();
@@ -364,8 +373,8 @@ export function createD10Geometry(radius: number = 1.0): DieDefinition {
             }));
             const scale = 0.38 / (maxDist || 1);
 
-            addWoundTriangle(pApex, pLeft, pBottom, center, xLocal, yLocal, scale, uMid, vMid, uSpan, vSpan);
-            addWoundTriangle(pApex, pBottom, pRight, center, xLocal, yLocal, scale, uMid, vMid, uSpan, vSpan);
+            addWoundTriangle(pApex, pLeft, pBottom, normal, center, xLocal, yLocal, scale, uMid, vMid, uSpan, vSpan);
+            addWoundTriangle(pApex, pBottom, pRight, normal, center, xLocal, yLocal, scale, uMid, vMid, uSpan, vSpan);
 
             faceNormals.set(faceValues[f], normal);
         } else {
@@ -377,7 +386,11 @@ export function createD10Geometry(radius: number = 1.0): DieDefinition {
             const pRight = eqVertices[(k + 2) % 10];
 
             const center = new THREE.Vector3().add(pApex).add(pLeft).add(pTop).add(pRight).multiplyScalar(0.25);
-            const normal = center.clone().normalize();
+            // Calculate exact planar kite normal from diagonals
+            const diagLong = new THREE.Vector3().subVectors(pTop, pApex);
+            const diagWide = new THREE.Vector3().subVectors(pLeft, pRight);
+            const normal = new THREE.Vector3().crossVectors(diagWide, diagLong).normalize();
+            if (normal.dot(center) < 0) normal.negate();
 
             // For lower kites, point yLocal towards top edge so numerals read upright
             const yLocal = new THREE.Vector3().subVectors(pTop, center).normalize();
@@ -389,8 +402,8 @@ export function createD10Geometry(radius: number = 1.0): DieDefinition {
             }));
             const scale = 0.38 / (maxDist || 1);
 
-            addWoundTriangle(pApex, pRight, pTop, center, xLocal, yLocal, scale, uMid, vMid, uSpan, vSpan);
-            addWoundTriangle(pApex, pTop, pLeft, center, xLocal, yLocal, scale, uMid, vMid, uSpan, vSpan);
+            addWoundTriangle(pApex, pRight, pTop, normal, center, xLocal, yLocal, scale, uMid, vMid, uSpan, vSpan);
+            addWoundTriangle(pApex, pTop, pLeft, normal, center, xLocal, yLocal, scale, uMid, vMid, uSpan, vSpan);
 
             faceNormals.set(faceValues[f], normal);
         }
@@ -398,8 +411,8 @@ export function createD10Geometry(radius: number = 1.0): DieDefinition {
 
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    geometry.setAttribute('normal', new THREE.Float32BufferAttribute(normalsList, 3));
     geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
-    geometry.computeVertexNormals();
 
     return {
         sides: 10,

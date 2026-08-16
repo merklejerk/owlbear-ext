@@ -195,20 +195,21 @@
                     }
                 } else if (action.cmd === 'dcolor' || action.cmd === 'dicecolor') {
                     const sub = (action.args[0] ?? '').toLowerCase();
+                    const playerId = obr.player.id;
                     if (!sub) {
-                        const current = getDiceColorOverride();
+                        const current = getDiceColorOverride(playerId);
                         if (current) {
                             obr.notification.show(`Current dice color override is ${current}. Use /dcolor clear to reset.`, 'INFO');
                         } else {
                             obr.notification.show('No dice color override set (using player color). Set with /dcolor #ff4400', 'INFO');
                         }
                     } else if (['none', 'null', 'empty', 'reset', 'clear', 'off', '0'].includes(sub)) {
-                        setDiceColorOverride(null);
+                        setDiceColorOverride(null, playerId);
                         obr.notification.show('Dice color override cleared (using player color)', 'INFO');
                     } else {
                         const normalized = normalizeHexColor(action.args[0]);
                         if (normalized) {
-                            setDiceColorOverride(normalized);
+                            setDiceColorOverride(normalized, playerId);
                             obr.notification.show(`Dice color override set to ${normalized}`, 'INFO');
                         } else {
                             obr.notification.show('Invalid hex color. Use /dcolor #ff4400 or /dcolor clear', 'ERROR');
@@ -250,7 +251,7 @@
     }
 
     function doRolls(rolls: Roll[]) {
-        const colorOverride = getDiceColorOverride();
+        const colorOverride = getDiceColorOverride(obr.player.id);
         obr.broadcast.sendMessage(
             PUBLIC_EXT_ID,
             {
@@ -266,7 +267,7 @@
     }
 
     async function runCritTest() {
-        const colorOverride = getDiceColorOverride();
+        const colorOverride = getDiceColorOverride(obr.player.id);
         obr.broadcast.sendMessage(
             PUBLIC_EXT_ID,
             {
