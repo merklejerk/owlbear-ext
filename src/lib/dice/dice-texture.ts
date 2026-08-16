@@ -664,3 +664,161 @@ export function getTextureForDie(
     textureAtlasCache.set(key, texture);
     return texture;
 }
+
+/**
+ * Draws a luminous white/gold numeral on a pitch-black emissive map canvas.
+ */
+function drawEmissiveNumeral(
+    ctx: CanvasRenderingContext2D,
+    text: string,
+    x: number,
+    y: number,
+    fontSize: number,
+    fontName: string,
+    rotation: number = 0,
+    showUnderline: boolean = false,
+) {
+    ctx.save();
+    ctx.translate(x, y);
+    if (rotation !== 0) {
+        ctx.rotate(rotation);
+    }
+    ctx.font = `900 ${fontSize}px ${fontName}`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+
+    // Radiant outer glow
+    ctx.save();
+    ctx.shadowColor = '#ffd54f';
+    ctx.shadowBlur = 14;
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText(text, 0, 0);
+    ctx.restore();
+
+    // Incandescent solid white-gold core
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText(text, 0, 0);
+
+    if (showUnderline) {
+        const underlineWidth = fontSize * 0.42;
+        const underlineHeight = Math.max(3, fontSize * 0.10);
+        const underlineY = fontSize * 0.36;
+        const underlineX = -underlineWidth / 2;
+
+        ctx.save();
+        ctx.shadowColor = '#ffd54f';
+        ctx.shadowBlur = 10;
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(underlineX, underlineY, underlineWidth, underlineHeight);
+        ctx.restore();
+    }
+    ctx.restore();
+}
+
+/**
+ * Procedurally generates an emissive atlas with a pitch-black background (#000000)
+ * where only the engraved numerals and facet inlays emit light.
+ */
+export function createDiceEmissiveAtlas(
+    faceValues: number[],
+    cols: number,
+    rows: number,
+    fontName: string = 'Inter, sans-serif',
+    cellSize: number = 256,
+    sides?: number,
+): THREE.CanvasTexture {
+    if (typeof document === 'undefined') {
+        return new THREE.CanvasTexture({} as HTMLCanvasElement);
+    }
+
+    const canvas = document.createElement('canvas');
+    canvas.width = cols * cellSize;
+    canvas.height = rows * cellSize;
+
+    const ctx = canvas.getContext('2d');
+    if (!ctx) {
+        throw new Error('Failed to create 2D canvas context for dice emissive atlas');
+    }
+
+    // Pitch black background (zero emissive tint on marble resin body)
+    ctx.fillStyle = '#000000';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    for (let f = 0; f < faceValues.length; f++) {
+        const val = faceValues[f];
+        const col = f % cols;
+        const row = Math.floor(f / cols);
+
+        const startX = col * cellSize;
+        const startY = row * cellSize;
+        const centerX = startX + cellSize / 2;
+        const centerY = startY + cellSize / 2;
+
+        if (sides === 4 && f < D4_FACE_CORNERS.length) {
+            const [topVal, blVal, brVal] = D4_FACE_CORNERS[f];
+            const fontSize = Math.floor(cellSize * 0.22);
+
+            // Top apex numeral
+            drawEmissiveNumeral(ctx, topVal.toString(), centerX, centerY - cellSize * 0.22, fontSize, fontName, 0);
+
+            // Bottom-left apex numeral
+            drawEmissiveNumeral(ctx, blVal.toString(), centerX - cellSize * 0.19, centerY + cellSize * 0.11, fontSize, fontName, (-2 * Math.PI) / 3);
+
+            // Bottom-right apex numeral
+            drawEmissiveNumeral(ctx, brVal.toString(), centerX + cellSize * 0.19, centerY + cellSize * 0.11, fontSize, fontName, (2 * Math.PI) / 3);
+        } else {
+            const text = val.toString();
+            const fontSize = Math.floor(cellSize * (text.length > 2 ? 0.36 : 0.46));
+            drawEmissiveNumeral(ctx, text, centerX, centerY, fontSize, fontName, 0, val === 6 || val === 9);
+        }
+    }
+
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.generateMipmaps = true;
+    texture.minFilter = THREE.LinearMipmapLinearFilter;
+    texture.magFilter = THREE.LinearFilter;
+    return texture;
+}
+
+const emissiveAtlasCache = new Map<string, THREE.CanvasTexture>();
+
+/**
+ * Generates or retrieves cached emissive atlas for a given side count.
+ */
+export function getEmissiveMapForDie(
+    sides: number,
+    faceValues: number[],
+    fontName: string = 'Inter, sans-serif',
+): THREE.CanvasTexture {
+    const key = `${sides}_${fontName}`;
+    const cached = emissiveAtlasCache.get(key);
+    if (cached) {
+        return cached;
+    }
+
+    let emissiveMap: THREE.CanvasTexture;
+    switch (sides) {
+        case 4:
+            emissiveMap = createDiceEmissiveAtlas(faceValues, 2, 2, fontName, 256, 4);
+            break;
+        case 6:
+            emissiveMap = createDiceEmissiveAtlas(faceValues, 3, 2, fontName);
+            break;
+        case 8:
+            emissiveMap = createDiceEmissiveAtlas(faceValues, 4, 2, fontName);
+            break;
+        case 10:
+            emissiveMap = createDiceEmissiveAtlas(faceValues, 5, 2, fontName);
+            break;
+        case 12:
+            emissiveMap = createDiceEmissiveAtlas(faceValues, 4, 3, fontName);
+            break;
+        case 20:
+        default:
+            emissiveMap = createDiceEmissiveAtlas(faceValues, 5, 4, fontName);
+            break;
+    }
+
+    emissiveAtlasCache.set(key, emissiveMap);
+    return emissiveMap;
+}

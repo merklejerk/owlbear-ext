@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { createPlayerDiceTheme, DEFAULT_THEME, getNormalMapForDie, getTextureForDie } from './dice-texture';
+import { createPlayerDiceTheme, DEFAULT_THEME, getNormalMapForDie, getTextureForDie, getEmissiveMapForDie } from './dice-texture';
 
 describe('dice theme generator', () => {
     it('returns default theme when no player info provided', () => {
@@ -44,5 +44,18 @@ describe('dice theme generator', () => {
 
         expect(tex1).toBeDefined();
         expect(tex1).toBe(tex2);
+    });
+
+    it('generates and memoizes procedural emissive atlas for dice', () => {
+        const d20Values = Array.from({ length: 20 }, (_, i) => i + 1);
+        const em1 = getEmissiveMapForDie(20, d20Values);
+        const em2 = getEmissiveMapForDie(20, d20Values);
+
+        expect(em1).toBeDefined();
+        expect(em1).toBe(em2);
+
+        const d4Values = [1, 2, 3, 4];
+        const d4Em = getEmissiveMapForDie(4, d4Values);
+        expect(d4Em).toBeDefined();
     });
 });
