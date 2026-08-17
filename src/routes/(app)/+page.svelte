@@ -5,14 +5,27 @@
     import { getObr } from "$lib/obr-host.svelte";
     import { onMount } from "svelte";
     import { POPOVER_ID as ROLL_POPOVER_ID } from "./roll-popover/+page.svelte";
+    import { POPOVER_ID as DICE_OVERLAY_POPOVER_ID } from "./dice-overlay/+page.svelte";
     import AnnounceWatcher from "$lib/announce-watcher.svelte";
     import InitiativeWatcher from "$lib/initiative-watcher.svelte";
-    import DiceWatcher from "$lib/dice-watcher.svelte";
 
     const obr = getObr();
 
-    onMount(() => {
-        obr.popover.open({
+    onMount(async () => {
+        // Mount dice-overlay first so it sits underneath roll-popover and action window in DOM stacking order
+        await obr.popover.open({
+            url: `${PUBLIC_PATH_PREFIX}/dice-overlay`,
+            hidePaper: true,
+            width: 0,
+            height: 0,
+            marginThreshold: 0,
+            disableClickAway: true,
+            id: DICE_OVERLAY_POPOVER_ID,
+            anchorOrigin: { horizontal: 'CENTER', vertical: 'CENTER' },
+            transformOrigin: { horizontal: 'CENTER', vertical: 'CENTER' },
+        });
+
+        await obr.popover.open({
             url: `${PUBLIC_PATH_PREFIX}/roll-popover`,
             hidePaper: true,
             width: 0,
@@ -30,4 +43,3 @@
  <AnnounceWatcher />
  <CritWatcher popupDelay={5000} />
  <InitiativeWatcher />
- <DiceWatcher />

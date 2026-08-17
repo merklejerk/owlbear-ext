@@ -1,48 +1,106 @@
 <script lang="ts" context="module">
-    import { PUBLIC_EXT_ID } from "$env/static/public";
+    import { PUBLIC_EXT_ID, PUBLIC_PATH_PREFIX } from "$env/static/public";
     export const POPOVER_ID = `${PUBLIC_EXT_ID}/dice-overlay`;
 </script>
-
 <script lang="ts">
-    import { page } from "$app/stores";
-    import { getObr } from "$lib/obr-host.svelte";
+    import { onDestroy, onMount } from "svelte";
+    import { getObr, getPlayersStore } from "$lib/obr-host.svelte";
     import DiceCanvas, { type RollItem } from "$lib/dice/dice-canvas.svelte";
-    import { createPlayerDiceTheme } from "$lib/dice/dice-texture";
+    import { createPlayerDiceTheme, DEFAULT_THEME, type DiceTheme } from "$lib/dice/dice-texture";
+    import { isSupportedDieSize } from "$lib/dice/dice-geometries";
+    import { MAX_3D_DICE } from "$lib/dice/dice-physics";
+    import { isRollMsg, type BroadcastMsg } from "$lib/types";
+    import { extractDiceItems } from "$lib/rolls";
+    import { is3dDiceEnabled } from "$lib/dice-settings";
     import { fade } from "svelte/transition";
 
     const obr = getObr();
-    const rawDiceParam = $page.url.searchParams.get('dice') ?? '20:20';
-    const playerParam = $page.url.searchParams.get('player');
-    const colorParam = $page.url.searchParams.get('color');
-    const rollIdParam = $page.url.searchParams.get('rollId');
+    const players = getPlayersStore();
 
-    const playerTheme = createPlayerDiceTheme(playerParam, colorParam);
+    let activeDice: RollItem[] = [];
+    let activeTheme: DiceTheme = DEFAULT_THEME;
+    let activeSeed: string | undefined = undefined;
+    let isRolling = false;
+    let unsubBroadcast: (() => void) | null = null;
+    let currentWidth = 0;
+    let currentHeight = 0;
 
-    function parseDiceParam(param: string): RollItem[] {
+    async function setPopoverSize(w: number, h: number): Promise<void> {
+        if (w === currentWidth && h === currentHeight) return;
+        currentWidth = w;
+        currentHeight = h;
         try {
-            return param.split(',').map(part => {
-                const [s, r] = part.split(':').map(Number);
-                return {
-                    sides: isNaN(s) ? 20 : s,
-                    result: isNaN(r) ? 20 : r,
-                };
-            }).filter(d => d.sides > 0);
+            await Promise.all([
+                obr.popover.setWidth(POPOVER_ID, w),
+                obr.popover.setHeight(POPOVER_ID, h),
+            ]);
         } catch {
-            return [{ sides: 20, result: 20 }];
+            await obr.popover.open({
+                url: `${PUBLIC_PATH_PREFIX}/dice-overlay`,
+                hidePaper: true,
+                width: w,
+                height: h,
+                marginThreshold: 0,
+                disableClickAway: true,
+                id: POPOVER_ID,
+                anchorOrigin: { horizontal: 'CENTER', vertical: 'CENTER' },
+                transformOrigin: { horizontal: 'CENTER', vertical: 'CENTER' },
+            });
         }
     }
 
-    const diceList = parseDiceParam(rawDiceParam);
-    let visible = true;
+    onMount(() => {
+        unsubBroadcast = obr.broadcast.onMessage(PUBLIC_EXT_ID, async (msg: BroadcastMsg) => {
+            if (!isRollMsg(msg)) return;
+            if (msg.data.imported) return;
+            if (!is3dDiceEnabled()) return;
+
+            const items = msg.data.rolls.flatMap(r => extractDiceItems(r));
+            const supportedDice = items.filter(d => isSupportedDieSize(d.sides)).slice(0, MAX_3D_DICE);
+            if (!supportedDice.length) return;
+
+            const player = $players[msg.data.playerId];
+            const diceColor = msg.data.color || player?.color;
+            const theme = createPlayerDiceTheme(msg.data.playerId, diceColor);
+
+            let width = 1200;
+            let height = 800;
+            try {
+                const [w, h] = await Promise.all([
+                    obr.viewport.getWidth(),
+                    obr.viewport.getHeight(),
+                ]);
+                if (w > 0 && h > 0) {
+                    width = w;
+                    height = h;
+                }
+            } catch {
+                width = window.innerWidth || 1200;
+                height = window.innerHeight || 800;
+            }
+
+            await setPopoverSize(width, height);
+
+            activeTheme = theme;
+            activeSeed = msg.data.rollId;
+            activeDice = supportedDice;
+            isRolling = true;
+        });
+    });
+
+    onDestroy(() => {
+        if (unsubBroadcast) {
+            unsubBroadcast();
+        }
+    });
 
     async function handleComplete() {
-        if (!visible) return;
-        visible = false;
+        if (!isRolling) return;
+        isRolling = false;
         setTimeout(async () => {
-            try {
-                await obr.popover.close(POPOVER_ID);
-            } catch {}
-        }, 250);
+            activeDice = [];
+            await setPopoverSize(0, 0);
+        }, 180);
     }
 </script>
 
@@ -78,7 +136,17 @@
         user-select: none !important;
         -webkit-tap-highlight-color: transparent !important;
         outline: none !important;
+        cursor: default;
+        pointer-events: none;
+        opacity: 0;
+        transition: opacity 180ms ease-out;
+    }
+
+    .overlay-container.active {
         cursor: pointer;
+        pointer-events: auto;
+        opacity: 1;
+        transition: opacity 120ms ease-in;
     }
 
     .overlay-container:focus,
@@ -95,18 +163,23 @@
     }
 </style>
 
-{#if visible}
 <!-- svelte-ignore a11y-click-events-have-key-events -->
 <!-- svelte-ignore a11y-no-noninteractive-element-interactions -->
 <div
     class="overlay-container"
-    out:fade={{ duration: 200 }}
+    class:active={isRolling}
     on:pointerdown={handleComplete}
     on:click={handleComplete}
     on:selectstart|preventDefault
     on:dragstart|preventDefault
     role="presentation"
     >
-    <DiceCanvas dice={diceList} theme={playerTheme} seed={rollIdParam} onComplete={handleComplete} />
+    <DiceCanvas
+        dice={activeDice}
+        theme={activeTheme}
+        seed={activeSeed}
+        width={currentWidth}
+        height={currentHeight}
+        onComplete={handleComplete}
+    />
 </div>
-{/if}

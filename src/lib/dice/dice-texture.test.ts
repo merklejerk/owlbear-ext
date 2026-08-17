@@ -7,6 +7,7 @@ import {
     getEmissiveMapForDie,
     createDiceMaterial,
     getComplementaryNumeralPalette,
+    getFacetEdgeColor,
 } from './dice-texture';
 
 describe('dice theme generator', () => {
@@ -123,6 +124,54 @@ describe('dice theme generator', () => {
 
             const white = getComplementaryNumeralPalette(0, 0, 95);
             expect(white.numeralColor.r).toBeLessThan(0.3); // deep slate on white
+        });
+    });
+
+    describe('harmonic facet edge trim color', () => {
+        it('uses explicit theme borderColor when provided', () => {
+            const color = getFacetEdgeColor({
+                backgroundColor: '#ffffff',
+                textColor: '#000000',
+                borderColor: '#123456',
+            });
+            expect(color.getHexString()).toBe('123456');
+        });
+
+        it('gives polished slate trim for alabaster white dice', () => {
+            const color = getFacetEdgeColor({
+                backgroundColor: 'hsl(0, 0%, 95%)',
+                textColor: '#ffffff',
+            });
+            // Gunmetal / slate tone: darker than alabaster
+            expect(color.r).toBeLessThan(0.5);
+            expect(color.b).toBeGreaterThan(color.r);
+        });
+
+        it('gives radiant polished gold trim for obsidian black dice', () => {
+            const color = getFacetEdgeColor({
+                backgroundColor: 'hsl(0, 0%, 4%)',
+                textColor: '#ffffff',
+            });
+            // Radiant gold: warm high red and green
+            expect(color.r).toBeGreaterThan(0.5);
+            expect(color.g).toBeGreaterThan(0.4);
+        });
+
+        it('gives gilded warm champagne gold for ruby red dice', () => {
+            const color = getFacetEdgeColor({
+                backgroundColor: 'hsl(0, 90%, 35%)',
+                textColor: '#ffffff',
+            });
+            expect(color.r).toBeGreaterThan(0.6);
+            expect(color.g).toBeGreaterThan(0.5);
+        });
+
+        it('gives contrasting deep tinted edge trim for light/pastel dice', () => {
+            const color = getFacetEdgeColor({
+                backgroundColor: 'hsl(60, 100%, 75%)', // Light yellow
+                textColor: '#ffffff',
+            });
+            expect(color.r).toBeLessThan(0.6);
         });
     });
 });

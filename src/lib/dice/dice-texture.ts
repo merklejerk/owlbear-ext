@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { D4_FACE_CORNERS } from './dice-geometries';
+import { D4_FACE_CORNERS, getDieDefinition } from './dice-geometries';
 
 export interface DiceTheme {
     backgroundColor: string;
@@ -755,6 +755,52 @@ export function getComplementaryNumeralPalette(h: number, s: number, l: number):
 }
 
 /**
+ * Calculates a high-contrast harmonious metallic facet edge trim color based on the die base color.
+ * Enforces strong visual delineation across both light pastel and dark jewel resins.
+ */
+export function getFacetEdgeColor(theme: DiceTheme = DEFAULT_THEME): THREE.Color {
+    if (theme.borderColor) {
+        return new THREE.Color(theme.borderColor);
+    }
+    const { h, s, l } = parseHsl(theme.backgroundColor);
+
+    if (s < 10) {
+        // Achromatic / Neutral (Black to White)
+        if (l > 50) {
+            // Alabaster / White: High-contrast midnight obsidian slate edge trim
+            const [r, g, b] = hslToRgb(230, 30, 10);
+            return new THREE.Color(r / 255, g / 255, b / 255);
+        } else {
+            // Obsidian / Black: Brilliant radiant bright gold edge trim
+            const [r, g, b] = hslToRgb(46, 95, 80);
+            return new THREE.Color(r / 255, g / 255, b / 255);
+        }
+    }
+
+    if (l > 50) {
+        // Light / Pastel / Solar Yellow: High-contrast deep complementary midnight ink/metal trim
+        const compHue = (h + 180) % 360;
+        const compSat = Math.max(45, Math.min(80, s));
+        const [r, g, b] = hslToRgb(compHue, compSat, 11);
+        return new THREE.Color(r / 255, g / 255, b / 255);
+    }
+
+    // Dark / Mid Jewel tones: Gilded radiant solar / champagne gold trim with high luminous contrast
+    let goldHue = 45;
+    if (h >= 330 || h <= 35) {
+        goldHue = 48; // Ruby -> warm champagne gold
+    } else if (h >= 85 && h <= 175) {
+        goldHue = 42; // Emerald -> solar imperial gold
+    } else if (h > 175 && h < 330) {
+        goldHue = 46; // Sapphire / Amethyst -> celestial gold
+    } else {
+        goldHue = 45; // Amber / Golden -> rich burnished gold
+    }
+    const [r, g, b] = hslToRgb(goldHue, 95, 80);
+    return new THREE.Color(r / 255, g / 255, b / 255);
+}
+
+/**
  * Creates a high-performance MeshStandardMaterial with player color tinting injected via shader uniforms.
  * Shares the same single texture atlas across all players without redundant texture allocations.
  */
@@ -806,8 +852,10 @@ export function createDiceMaterial(
         map: baseTexture,
         normalMap,
         normalScale: new THREE.Vector2(0.85, 0.85),
-        roughness: 0.20,
+        roughness: 0.18,
         metalness: 0.05,
+        transparent: true,
+        opacity: 1.0,
         emissiveMap,
         emissive: new THREE.Color(0xffd54f),
         emissiveIntensity: 0.0,
@@ -851,7 +899,7 @@ export function createDiceMaterial(
                 // 4. Inlaid high-contrast numerals
                 finalCol = mix(finalCol, uNumeralColor, numeralMask);
 
-                diffuseColor = vec4(finalCol, 1.0);
+                diffuseColor = vec4(finalCol, opacity);
             #endif
             `,
         );
@@ -1017,4 +1065,20 @@ export function getEmissiveMapForDie(
 
     emissiveAtlasCache.set(key, emissiveMap);
     return emissiveMap;
+}
+
+/**
+ * Eagerly pre-warms geometries, channel-masked texture atlases, normal maps, and emissive maps
+ * for all 6 standard tabletop polyhedral dice (D4, D6, D8, D10, D12, D20).
+ */
+export function prewarmDiceAssets(fontName?: string): void {
+    const sidesList = [4, 6, 8, 10, 12, 20];
+    for (const sides of sidesList) {
+        const def = getDieDefinition(sides);
+        if (def) {
+            getTextureForDie(sides, def.faceValues, fontName);
+            getNormalMapForDie(sides, def.faceValues);
+            getEmissiveMapForDie(sides, def.faceValues, fontName);
+        }
+    }
 }

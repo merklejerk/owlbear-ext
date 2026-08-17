@@ -9,17 +9,33 @@
     import { onMount, onDestroy } from 'svelte';
     import * as THREE from 'three';
     import { getDieDefinition, isSupportedDieSize, type DieDefinition } from './dice-geometries';
-    import { createDiceMaterial, DEFAULT_THEME, type DiceTheme } from './dice-texture';
+    import { createDiceMaterial, DEFAULT_THEME, type DiceTheme, prewarmDiceAssets, getFacetEdgeColor } from './dice-texture';
     import { generateMultiDiceTrajectories, type DiceTrajectory, MAX_3D_DICE, createMulberry32, hashStringToSeed } from './dice-physics';
 
-    export let dice: RollItem[] = [{ sides: 20, result: 20 }];
+    export let dice: RollItem[] = [];
     export let theme: DiceTheme = DEFAULT_THEME;
     export let holdDuration: number = 2.5;
     export let seed: string | number | null | undefined = undefined;
+    export let width: number = 1200;
+    export let height: number = 800;
     export let onComplete: () => void = () => {};
 
     let container: HTMLDivElement;
     let animFrameId: number | null = null;
+    let mounted = false;
+
+    // Persistent Three.js Infrastructure
+    let scene: THREE.Scene;
+    let camera: THREE.PerspectiveCamera;
+    let renderer: THREE.WebGLRenderer;
+    const fov = 38;
+
+    // Persistent Textures & Particle Geometries (Allocated once at startup)
+    let shockwaveTexture: THREE.CanvasTexture;
+    let sparkTexture: THREE.CanvasTexture;
+    let smokeTexture: THREE.CanvasTexture;
+    let shockwavePlaneGeo: THREE.PlaneGeometry;
+    let shadowPlaneMat: THREE.ShadowMaterial;
 
     interface ActiveDie {
         mesh: THREE.Mesh;
@@ -29,10 +45,48 @@
         trajectory: DiceTrajectory;
     }
 
-    /**
-     * Procedurally generates a detailed, textured arcane shockwave ring with
-     * radial energy spokes, high-frequency caustic bands, and runic tick notches.
-     */
+    interface SparkBurst {
+        points: THREE.Points;
+        geo: THREE.BufferGeometry;
+        mat: THREE.PointsMaterial;
+        velocities: Float32Array;
+        basePositions: Float32Array;
+        startTime: number;
+        duration: number;
+        active: boolean;
+    }
+
+    interface SmokeBurst {
+        mesh: THREE.Mesh;
+        geo: THREE.BufferGeometry;
+        mat: THREE.MeshBasicMaterial;
+        startTime: number;
+        duration: number;
+        active: boolean;
+    }
+
+    interface Nat20GlintLight {
+        epicenterLight: THREE.PointLight;
+        glintLight: THREE.PointLight;
+        startTime: number;
+        restX: number;
+        restZ: number;
+    }
+
+    // Active animation state for the current roll
+    let activeDice: ActiveDie[] = [];
+    let shockwavePlanes: Array<{ mesh: THREE.Mesh; startTime: number; maxRadius: number; duration: number }> = [];
+    let shockwaveMaterials: THREE.MeshBasicMaterial[] = [];
+    let sparkBursts: SparkBurst[] = [];
+    let smokeBursts: SmokeBurst[] = [];
+    let nat20Lights: Nat20GlintLight[] = [];
+
+    // Reusable math scratchpads for zero-allocation animation ticks
+    const tempPos0 = new THREE.Vector3();
+    const tempPos1 = new THREE.Vector3();
+    const tempQuat0 = new THREE.Quaternion();
+    const tempQuat1 = new THREE.Quaternion();
+
     function createShockwaveTexture(): THREE.CanvasTexture {
         if (typeof document === 'undefined') {
             return new THREE.CanvasTexture({} as HTMLCanvasElement);
@@ -94,12 +148,10 @@
         tex.generateMipmaps = true;
         tex.minFilter = THREE.LinearMipmapLinearFilter;
         tex.magFilter = THREE.LinearFilter;
+        tex.anisotropy = 8;
         return tex;
     }
 
-    /**
-     * Procedurally generates a glowing diamond starburst ember texture.
-     */
     function createSparkTexture(): THREE.CanvasTexture {
         if (typeof document === 'undefined') {
             return new THREE.CanvasTexture({} as HTMLCanvasElement);
@@ -128,12 +180,10 @@
         ctx.fillRect(4, center - 1, 56, 2);
 
         const tex = new THREE.CanvasTexture(canvas);
+        tex.anisotropy = 8;
         return tex;
     }
 
-    /**
-     * Procedurally generates a soft, wispy smoke puff / ash particle texture.
-     */
     function createSmokeTexture(): THREE.CanvasTexture {
         if (typeof document === 'undefined') {
             return new THREE.CanvasTexture({} as HTMLCanvasElement);
@@ -146,7 +196,6 @@
             return new THREE.CanvasTexture(canvas);
         }
 
-        // Multiple overlapping soft radial puffs for cloudy volume
         const puffs = [
             { x: 64, y: 64, r: 56, a: 0.85 },
             { x: 50, y: 52, r: 42, a: 0.55 },
@@ -168,88 +217,94 @@
         }
 
         const tex = new THREE.CanvasTexture(canvas);
+        tex.anisotropy = 8;
         return tex;
     }
 
-    onMount(() => {
-        if (!container) return;
+    function updateDimensions(w: number, h: number) {
+        if (!camera || !renderer) return;
+        const renderW = Math.max(1, w);
+        const renderH = Math.max(1, h);
+        camera.aspect = renderW / renderH;
+        camera.updateProjectionMatrix();
+        renderer.setSize(renderW, renderH);
+    }
 
-        // Filter out unsupported dice and enforce MAX_3D_DICE ceiling
-        const supportedDice = dice.filter(d => isSupportedDieSize(d.sides)).slice(0, MAX_3D_DICE);
+    function clearRoll() {
+        if (animFrameId) {
+            cancelAnimationFrame(animFrameId);
+            animFrameId = null;
+        }
+
+        for (const die of activeDice) {
+            scene.remove(die.mesh);
+            die.edgeLines.geometry.dispose();
+            die.edgeMaterial.dispose();
+            if (Array.isArray(die.mesh.material)) {
+                die.mesh.material.forEach(m => m.dispose());
+            } else {
+                die.mesh.material.dispose();
+            }
+        }
+        activeDice = [];
+
+        for (const sw of shockwavePlanes) {
+            scene.remove(sw.mesh);
+        }
+        shockwavePlanes = [];
+
+        for (const mat of shockwaveMaterials) {
+            mat.dispose();
+        }
+        shockwaveMaterials = [];
+
+        for (const sb of sparkBursts) {
+            scene.remove(sb.points);
+            sb.geo.dispose();
+            sb.mat.dispose();
+        }
+        sparkBursts = [];
+
+        for (const smk of smokeBursts) {
+            scene.remove(smk.mesh);
+            smk.geo.dispose();
+            smk.mat.dispose();
+        }
+        smokeBursts = [];
+
+        for (const nl of nat20Lights) {
+            scene.remove(nl.epicenterLight);
+            nl.epicenterLight.dispose();
+            scene.remove(nl.glintLight);
+            nl.glintLight.dispose();
+        }
+        nat20Lights = [];
+
+        if (renderer) {
+            renderer.clear();
+        }
+    }
+
+    function startRoll(rollItems: RollItem[], rollTheme: DiceTheme, rollSeed?: string | number | null) {
+        clearRoll();
+        if (shadowPlaneMat) {
+            shadowPlaneMat.opacity = 0.38;
+        }
+
+        const supportedDice = rollItems.filter(d => isSupportedDieSize(d.sides)).slice(0, MAX_3D_DICE);
         const count = supportedDice.length;
         if (count === 0) {
             onComplete();
             return;
         }
 
-        const rng = seed !== undefined ? createMulberry32(hashStringToSeed(seed)) : Math.random;
+        const rng = rollSeed !== undefined ? createMulberry32(hashStringToSeed(rollSeed)) : Math.random;
 
-        const width = container.clientWidth || window.innerWidth;
-        const height = container.clientHeight || window.innerHeight;
-        const aspect = width / height;
+        const renderW = (container?.clientWidth > 0 ? container.clientWidth : (width > 0 ? width : window.innerWidth)) || 1200;
+        const renderH = (container?.clientHeight > 0 ? container.clientHeight : (height > 0 ? height : window.innerHeight)) || 800;
+        updateDimensions(renderW, renderH);
 
-        // Scene & Transparent Renderer
-        const scene = new THREE.Scene();
-        const fov = 38;
-        const camera = new THREE.PerspectiveCamera(fov, aspect, 0.1, 100);
-        camera.position.set(0, 18, 3.5);
-        camera.lookAt(0, 0, 0);
-
-        const renderer = new THREE.WebGLRenderer({
-            alpha: true,
-            antialias: true,
-            powerPreference: 'high-performance',
-        });
-        renderer.autoClear = false;
-        renderer.setSize(width, height);
-        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
-        renderer.setClearColor(0x000000, 0);
-        renderer.shadowMap.enabled = true;
-        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-        renderer.toneMapping = THREE.ACESFilmicToneMapping;
-        renderer.toneMappingExposure = 1.05;
-        renderer.outputColorSpace = THREE.SRGBColorSpace;
-        container.appendChild(renderer.domElement);
-
-        // Lighting - directional key with restrained ambient for rich normal map relief
-        const ambientLight = new THREE.AmbientLight(0xffffff, 0.55);
-        ambientLight.layers.enable(1);
-        scene.add(ambientLight);
-
-        const dirLight = new THREE.DirectionalLight(0xffffff, 1.85);
-        dirLight.position.set(-8, 22, -10); // Angled key light creates crisp micro-shadows along normals
-        dirLight.castShadow = true;
-        dirLight.shadow.mapSize.width = 1024;
-        dirLight.shadow.mapSize.height = 1024;
-        dirLight.shadow.camera.near = 0.5;
-        dirLight.shadow.camera.far = 55;
-        const shadowExtent = 18;
-        dirLight.shadow.camera.left = -shadowExtent;
-        dirLight.shadow.camera.right = shadowExtent;
-        dirLight.shadow.camera.top = shadowExtent;
-        dirLight.shadow.camera.bottom = -shadowExtent;
-        dirLight.shadow.bias = -0.0008;
-        dirLight.layers.enable(1);
-        scene.add(dirLight);
-
-        // Secondary soft fill light from opposite angle
-        const fillLight = new THREE.DirectionalLight(0xaaccff, 0.50);
-        fillLight.position.set(10, 12, 10);
-        fillLight.layers.enable(1);
-        scene.add(fillLight);
-
-        // Transparent shadow receiver plane (floor table)
-        const shadowPlaneGeo = new THREE.PlaneGeometry(80, 80);
-        const shadowPlaneMat = new THREE.ShadowMaterial({
-            opacity: 0.38,
-        });
-        const shadowPlane = new THREE.Mesh(shadowPlaneGeo, shadowPlaneMat);
-        shadowPlane.rotation.x = -Math.PI / 2;
-        shadowPlane.position.y = 0;
-        shadowPlane.receiveShadow = true;
-        scene.add(shadowPlane);
-
-        // Compute die radius dynamically so diameter is ~15% of viewport's minimum dimension
+        const aspect = renderW / renderH;
         const fovRad = (fov * Math.PI) / 180;
         const visibleHeightAtTable = 2 * 18 * Math.tan(fovRad / 2);
         const visibleMinWorld = visibleHeightAtTable * Math.min(1, aspect);
@@ -282,506 +337,256 @@
         const trajectories = generateMultiDiceTrajectories({
             items: multiItems,
             durationSeconds: 1.3,
-            seed,
+            seed: rollSeed,
         });
 
-        const activeDice: ActiveDie[] = [];
+        activeDice = [];
         for (let i = 0; i < count; i++) {
-            const item = dice[i];
+            const item = supportedDice[i];
             const def = multiItems[i].die;
-            const mat = createDiceMaterial(item.sides, def.faceValues, theme);
+            const mat = createDiceMaterial(item.sides, def.faceValues, rollTheme);
 
+            // Reuse memoized BufferGeometry directly across all dice instances
             const mesh = new THREE.Mesh(def.geometry, mat);
             mesh.castShadow = true;
             mesh.receiveShadow = true;
 
-            // Metallic gold facet edge trim
-            const edges = new THREE.EdgesGeometry(def.geometry, 15);
-            const lineMat = new THREE.LineBasicMaterial({
-                color: 0xf6d365,
+            // Harmonic metallic facet edge trim tailored to die base color
+            const edgesGeo = new THREE.EdgesGeometry(def.geometry, 15);
+            const edgeMat = new THREE.LineBasicMaterial({
+                color: getFacetEdgeColor(rollTheme),
+                linewidth: 2,
                 transparent: true,
-                opacity: 0.85,
+                opacity: 0.90,
             });
-            const edgeLines = new THREE.LineSegments(edges, lineMat);
+            const edgeLines = new THREE.LineSegments(edgesGeo, edgeMat);
             mesh.add(edgeLines);
-
-            mesh.layers.set(0);
-            edgeLines.layers.set(0);
 
             scene.add(mesh);
 
             activeDice.push({
                 mesh,
                 edgeLines,
-                edgeMaterial: lineMat,
+                edgeMaterial: edgeMat,
                 definition: def,
                 trajectory: trajectories[i],
             });
         }
 
-        // Special Effects: Nat 20 radiance & Nat 1 sad smoke puff
-        const shockwaveTexture = createShockwaveTexture();
-        const sparkTexture = createSparkTexture();
-        const smokeTexture = createSmokeTexture();
-        const shockwavePlaneGeo = new THREE.PlaneGeometry(1, 1);
-        const shockwaveMeshes: Array<{
-            mesh: THREE.Mesh;
-            startTime: number;
-            duration: number;
-            startScale: number;
-            endScale: number;
-            maxOpacity: number;
-            spinSpeed: number;
-        }> = [];
-        const shockwaveMaterials: THREE.MeshBasicMaterial[] = [];
-
-        interface SparkBurst {
-            points: THREE.Points;
-            geo: THREE.BufferGeometry;
-            mat: THREE.PointsMaterial;
-            initialPositions: Float32Array;
-            velocities: Float32Array;
-            startTime: number;
-            duration: number;
-            count: number;
-        }
-        const sparkBursts: SparkBurst[] = [];
-
-        interface SmokeBurst {
-            points: THREE.Points;
-            geo: THREE.BufferGeometry;
-            mat: THREE.PointsMaterial;
-            initialPositions: Float32Array;
-            velocities: Float32Array;
-            startTime: number;
-            duration: number;
-            count: number;
-            baseSize: number;
-        }
-        const smokeBursts: SmokeBurst[] = [];
-
-        const nat20Lights: Array<{
-            epicenterLight: THREE.PointLight;
-            glintLight: THREE.PointLight;
-            restX: number;
-            restZ: number;
-            startTime: number;
-        }> = [];
+        // Prepare particle effects and Nat 20 flourishes
+        shockwavePlanes = [];
+        shockwaveMaterials = [];
+        sparkBursts = [];
+        smokeBursts = [];
+        nat20Lights = [];
 
         for (let i = 0; i < count; i++) {
             const item = supportedDice[i];
-            const def = multiItems[i].die;
             const traj = trajectories[i];
-            const lastFrame = traj.keyframes[traj.keyframes.length - 1];
+            const restPos = multiItems[i].restingPosition;
 
             if (item.sides === 20 && item.result === 20) {
-                const restX = lastFrame.position[0];
-                const restZ = lastFrame.position[2];
-                const settleTime = traj.duration;
-                const baseR = def.radius;
-
-                // 1. Primary Textured Shockwave
-                const mat1 = new THREE.MeshBasicMaterial({
+                // Shockwave Ring on Nat 20 Impact
+                const swMat = new THREE.MeshBasicMaterial({
                     map: shockwaveTexture,
                     transparent: true,
-                    opacity: 0,
-                    blending: THREE.AdditiveBlending,
+                    opacity: 0.0,
                     depthWrite: false,
+                    blending: THREE.AdditiveBlending,
                     side: THREE.DoubleSide,
                 });
-                shockwaveMaterials.push(mat1);
+                shockwaveMaterials.push(swMat);
 
-                const mesh1 = new THREE.Mesh(shockwavePlaneGeo, mat1);
-                mesh1.rotation.x = -Math.PI / 2;
-                mesh1.position.set(restX, 0.015, restZ);
-                mesh1.visible = false;
-                scene.add(mesh1);
+                const swMesh = new THREE.Mesh(shockwavePlaneGeo, swMat);
+                swMesh.rotation.x = -Math.PI / 2;
+                swMesh.position.set(restPos.x, 0.02, restPos.z);
+                swMesh.scale.set(0.1, 0.1, 1);
+                scene.add(swMesh);
 
-                shockwaveMeshes.push({
-                    mesh: mesh1,
-                    startTime: settleTime,
-                    duration: 0.90,
-                    startScale: baseR * 0.4,
-                    endScale: baseR * 4.6,
-                    maxOpacity: 0.98,
-                    spinSpeed: 0.75,
+                shockwavePlanes.push({
+                    mesh: swMesh,
+                    startTime: traj.duration,
+                    maxRadius: baseRadius * 6.5,
+                    duration: 0.85,
                 });
 
-                // 2. Secondary Echo Wave (counter-rotating shimmer)
-                const mat2 = new THREE.MeshBasicMaterial({
-                    map: shockwaveTexture,
-                    transparent: true,
-                    opacity: 0,
-                    blending: THREE.AdditiveBlending,
-                    depthWrite: false,
-                    side: THREE.DoubleSide,
-                });
-                shockwaveMaterials.push(mat2);
-
-                const mesh2 = new THREE.Mesh(shockwavePlaneGeo, mat2);
-                mesh2.rotation.x = -Math.PI / 2;
-                mesh2.position.set(restX, 0.018, restZ);
-                mesh2.visible = false;
-                scene.add(mesh2);
-
-                shockwaveMeshes.push({
-                    mesh: mesh2,
-                    startTime: settleTime + 0.07,
-                    duration: 0.70,
-                    startScale: baseR * 0.2,
-                    endScale: baseR * 3.0,
-                    maxOpacity: 0.75,
-                    spinSpeed: -1.2,
-                });
-
-                // 3. Golden Ember Spark Burst
-                const sparkCount = 32;
+                // Spark Particles Burst
+                const sparkCount = 80;
                 const sparkPositions = new Float32Array(sparkCount * 3);
-                const sparkInitPositions = new Float32Array(sparkCount * 3);
                 const sparkVelocities = new Float32Array(sparkCount * 3);
+                const sparkBasePos = new Float32Array(sparkCount * 3);
 
-                for (let s = 0; s < sparkCount; s++) {
-                    sparkPositions[s * 3] = restX;
-                    sparkPositions[s * 3 + 1] = 0.08;
-                    sparkPositions[s * 3 + 2] = restZ;
+                for (let p = 0; p < sparkCount; p++) {
+                    sparkPositions[p * 3] = restPos.x;
+                    sparkPositions[p * 3 + 1] = 0.05;
+                    sparkPositions[p * 3 + 2] = restPos.z;
 
-                    sparkInitPositions[s * 3] = restX;
-                    sparkInitPositions[s * 3 + 1] = 0.08;
-                    sparkInitPositions[s * 3 + 2] = restZ;
+                    sparkBasePos[p * 3] = restPos.x;
+                    sparkBasePos[p * 3 + 1] = 0.05;
+                    sparkBasePos[p * 3 + 2] = restPos.z;
 
-                    const angle = (s / sparkCount) * Math.PI * 2 + (Math.random() - 0.5) * 0.35;
-                    const speed = (2.8 + Math.random() * 3.6) * baseR;
-                    sparkVelocities[s * 3] = Math.cos(angle) * speed;
-                    sparkVelocities[s * 3 + 1] = 2.2 + Math.random() * 3.2; // Upward loft
-                    sparkVelocities[s * 3 + 2] = Math.sin(angle) * speed;
+                    const theta = (p / sparkCount) * Math.PI * 2 + (rng() - 0.5) * 0.4;
+                    const speed = 4.5 + rng() * 6.0;
+                    const vUp = 2.0 + rng() * 4.5;
+                    sparkVelocities[p * 3] = Math.cos(theta) * speed;
+                    sparkVelocities[p * 3 + 1] = vUp;
+                    sparkVelocities[p * 3 + 2] = Math.sin(theta) * speed;
                 }
 
                 const sparkGeo = new THREE.BufferGeometry();
                 sparkGeo.setAttribute('position', new THREE.BufferAttribute(sparkPositions, 3));
-
                 const sparkMat = new THREE.PointsMaterial({
                     map: sparkTexture,
-                    size: baseR * 0.42,
+                    size: 0.75,
                     transparent: true,
-                    opacity: 0,
+                    opacity: 0.0,
                     blending: THREE.AdditiveBlending,
                     depthWrite: false,
+                    color: new THREE.Color(0xfff0aa),
                 });
-
                 const sparkPoints = new THREE.Points(sparkGeo, sparkMat);
-                sparkPoints.visible = false;
                 scene.add(sparkPoints);
 
                 sparkBursts.push({
                     points: sparkPoints,
                     geo: sparkGeo,
                     mat: sparkMat,
-                    initialPositions: sparkInitPositions,
                     velocities: sparkVelocities,
-                    startTime: settleTime,
-                    duration: 0.85,
-                    count: sparkCount,
+                    basePositions: sparkBasePos,
+                    startTime: traj.duration,
+                    duration: 0.95,
+                    active: false,
                 });
 
-                // 4. Dynamic Epicenter Light & Close-Range Orbital Specular Glint Light (Layer 1 isolated)
-                const pLight = new THREE.PointLight(0xffdf66, 0, 16, 1.6);
-                pLight.position.set(restX, 1.4, restZ);
-                pLight.layers.set(1);
-                scene.add(pLight);
-
-                const gLight = new THREE.PointLight(0xffffff, 0, 18, 1.2);
-                gLight.position.set(restX, 3.0, restZ);
-                gLight.layers.set(1);
-                scene.add(gLight);
-
-                nat20Lights.push({
-                    epicenterLight: pLight,
-                    glintLight: gLight,
-                    restX,
-                    restZ,
-                    startTime: settleTime,
-                });
-            }
-
-            if (item.sides === 20 && item.result === 1) {
-                const restX = lastFrame.position[0];
-                const restY = lastFrame.position[1];
-                const restZ = lastFrame.position[2];
-                const settleTime = traj.duration;
-                const baseR = def.radius;
-
-                // 1. Billowing Volumetric Smoke Plume
-                const smokeCount = 36;
-                const smokePositions = new Float32Array(smokeCount * 3);
-                const smokeInitPositions = new Float32Array(smokeCount * 3);
-                const smokeVelocities = new Float32Array(smokeCount * 3);
-
-                for (let s = 0; s < smokeCount; s++) {
-                    const angle = Math.random() * Math.PI * 2;
-                    const rOffset = Math.random() * baseR * 0.5;
-                    const ox = Math.cos(angle) * rOffset;
-                    const oy = restY + baseR * 0.2 + Math.random() * 0.2;
-                    const oz = Math.sin(angle) * rOffset;
-
-                    smokePositions[s * 3] = restX + ox;
-                    smokePositions[s * 3 + 1] = oy;
-                    smokePositions[s * 3 + 2] = restZ + oz;
-
-                    smokeInitPositions[s * 3] = restX + ox;
-                    smokeInitPositions[s * 3 + 1] = oy;
-                    smokeInitPositions[s * 3 + 2] = restZ + oz;
-
-                    const speed = 0.35 + Math.random() * 0.75;
-                    smokeVelocities[s * 3] = Math.cos(angle) * speed;
-                    smokeVelocities[s * 3 + 1] = 1.4 + Math.random() * 2.0; // Vigorous upward plume
-                    smokeVelocities[s * 3 + 2] = Math.sin(angle) * speed;
-                }
-
-                const smokeGeo = new THREE.BufferGeometry();
-                smokeGeo.setAttribute('position', new THREE.BufferAttribute(smokePositions, 3));
-
-                const smokeMat = new THREE.PointsMaterial({
+                // Soft Radial Smoke / Dust Puff
+                const smokeGeo = new THREE.PlaneGeometry(baseRadius * 4.5, baseRadius * 4.5);
+                const smokeMat = new THREE.MeshBasicMaterial({
                     map: smokeTexture,
-                    size: baseR * 1.8,
                     transparent: true,
-                    opacity: 0,
+                    opacity: 0.0,
                     depthWrite: false,
+                    blending: THREE.NormalBlending,
+                    side: THREE.DoubleSide,
                 });
-
-                const smokePoints = new THREE.Points(smokeGeo, smokeMat);
-                smokePoints.visible = false;
-                scene.add(smokePoints);
+                const smokeMesh = new THREE.Mesh(smokeGeo, smokeMat);
+                smokeMesh.rotation.x = -Math.PI / 2;
+                smokeMesh.position.set(restPos.x, 0.015, restPos.z);
+                scene.add(smokeMesh);
 
                 smokeBursts.push({
-                    points: smokePoints,
+                    mesh: smokeMesh,
                     geo: smokeGeo,
                     mat: smokeMat,
-                    initialPositions: smokeInitPositions,
-                    velocities: smokeVelocities,
-                    startTime: settleTime,
-                    duration: 1.55,
-                    count: smokeCount,
-                    baseSize: baseR * 1.8,
+                    startTime: traj.duration,
+                    duration: 1.15,
+                    active: false,
                 });
 
-                // 2. Dying Red/Orange Ember Sparks Sputtering Upward
-                const emberCount = 14;
-                const emberPositions = new Float32Array(emberCount * 3);
-                const emberInitPositions = new Float32Array(emberCount * 3);
-                const emberVelocities = new Float32Array(emberCount * 3);
+                // Epicenter Burst Light & Dynamic Glint Orbit Light
+                const epicLight = new THREE.PointLight(0xffdf77, 0, 16, 2.0);
+                epicLight.position.set(restPos.x, 0.8, restPos.z);
+                scene.add(epicLight);
 
-                for (let e = 0; e < emberCount; e++) {
-                    emberPositions[e * 3] = restX;
-                    emberPositions[e * 3 + 1] = restY + baseR * 0.3;
-                    emberPositions[e * 3 + 2] = restZ;
+                const glint = new THREE.PointLight(0xffffff, 0, 10, 2.0);
+                glint.layers.set(1);
+                scene.add(glint);
 
-                    emberInitPositions[e * 3] = restX;
-                    emberInitPositions[e * 3 + 1] = restY + baseR * 0.3;
-                    emberInitPositions[e * 3 + 2] = restZ;
-
-                    const angle = Math.random() * Math.PI * 2;
-                    const speed = 0.5 + Math.random() * 1.0;
-                    emberVelocities[e * 3] = Math.cos(angle) * speed;
-                    emberVelocities[e * 3 + 1] = 1.0 + Math.random() * 1.6;
-                    emberVelocities[e * 3 + 2] = Math.sin(angle) * speed;
-                }
-
-                const emberGeo = new THREE.BufferGeometry();
-                emberGeo.setAttribute('position', new THREE.BufferAttribute(emberPositions, 3));
-
-                const emberMat = new THREE.PointsMaterial({
-                    map: sparkTexture,
-                    size: baseR * 0.32,
-                    color: 0xff3b11,
-                    transparent: true,
-                    opacity: 0,
-                    blending: THREE.AdditiveBlending,
-                    depthWrite: false,
-                });
-
-                const emberPoints = new THREE.Points(emberGeo, emberMat);
-                emberPoints.visible = false;
-                scene.add(emberPoints);
-
-                sparkBursts.push({
-                    points: emberPoints,
-                    geo: emberGeo,
-                    mat: emberMat,
-                    initialPositions: emberInitPositions,
-                    velocities: emberVelocities,
-                    startTime: settleTime,
-                    duration: 0.85,
-                    count: emberCount,
+                nat20Lights.push({
+                    epicenterLight: epicLight,
+                    glintLight: glint,
+                    startTime: traj.duration,
+                    restX: restPos.x,
+                    restZ: restPos.z,
                 });
             }
         }
 
-        // Animation playback loop
+        const maxDuration = Math.max(...trajectories.map(t => t.duration));
         const startTime = performance.now();
-        const maxDuration = Math.max(...activeDice.map(d => d.trajectory.duration));
         let completed = false;
 
-        const pA = new THREE.Vector3();
-        const pB = new THREE.Vector3();
-        const qA = new THREE.Quaternion();
-        const qB = new THREE.Quaternion();
-
         const animate = () => {
-            const elapsed = (performance.now() - startTime) / 1000;
+            const now = performance.now();
+            const elapsed = (now - startTime) / 1000;
 
-            camera.position.set(0, 18, 3.5);
-            camera.lookAt(0, 0, 0);
-
-            for (let i = 0; i < activeDice.length; i++) {
+            for (let i = 0; i < count; i++) {
                 const die = activeDice[i];
-                const item = supportedDice[i];
                 const traj = die.trajectory;
-                const frames = traj.keyframes;
+                const progress = Math.min(1.0, elapsed / traj.duration);
 
-                if (elapsed >= traj.duration) {
-                    // Resting state
-                    const lastFrame = frames[frames.length - 1];
-                    die.mesh.position.set(lastFrame.position[0], lastFrame.position[1], lastFrame.position[2]);
-                    die.mesh.quaternion.set(lastFrame.quaternion[0], lastFrame.quaternion[1], lastFrame.quaternion[2], lastFrame.quaternion[3]);
+                const indexFloat = progress * (traj.keyframes.length - 1);
+                const i0 = Math.floor(indexFloat);
+                const i1 = Math.min(traj.keyframes.length - 1, i0 + 1);
+                const t = indexFloat - i0;
 
-                    // Nat 20 selective numeral ignition & facet flare (zero body tint wash)
-                    if (item.sides === 20 && item.result === 20) {
-                        const dt = elapsed - traj.duration;
-                        const holdProgress = dt / holdDuration;
-                        const impactFlash = Math.max(0, 1 - dt / 0.50);
-                        const breathe = Math.sin(holdProgress * Math.PI * 2) * 0.15;
+                const k0 = traj.keyframes[i0];
+                const k1 = traj.keyframes[i1];
 
-                        // Die is on Layer 1 during the isolated 1.0s glint sweep, Layer 0 otherwise
-                        if (dt >= 0 && dt <= 1.0) {
-                            die.mesh.layers.set(1);
-                            die.edgeLines.layers.set(1);
-                        } else {
-                            die.mesh.layers.set(0);
-                            die.edgeLines.layers.set(0);
-                        }
+                tempPos0.set(k0.position[0], k0.position[1], k0.position[2]);
+                tempPos1.set(k1.position[0], k1.position[1], k1.position[2]);
+                die.mesh.position.lerpVectors(tempPos0, tempPos1, t);
 
-                        // Radiant engraved numerals via pitch-black background emissive map
-                        const mat = die.mesh.material as THREE.MeshStandardMaterial;
-                        mat.emissive.setHex(0xffdf77);
-                        mat.emissiveIntensity = Math.min(2.5, 1.25 + 1.25 * impactFlash + breathe);
+                tempQuat0.set(k0.quaternion[0], k0.quaternion[1], k0.quaternion[2], k0.quaternion[3]);
+                tempQuat1.set(k1.quaternion[0], k1.quaternion[1], k1.quaternion[2], k1.quaternion[3]);
+                die.mesh.quaternion.slerpQuaternions(tempQuat0, tempQuat1, t);
 
-                        // Flash facet edges to brilliant white-gold on impact, then breathe in glowing solar gold
-                        die.edgeMaterial.color.setRGB(
-                            1.0,
-                            0.82 + 0.18 * impactFlash,
-                            0.35 + 0.65 * impactFlash,
-                        );
-                        die.edgeMaterial.opacity = Math.min(1.0, 0.85 + 0.15 * impactFlash + breathe);
-                    }
-
-                    // Nat 1 resting state: sputtering ember numeral flicker, shudder, then cold desaturation
-                    if (item.sides === 20 && item.result === 1) {
-                        const dt = elapsed - traj.duration;
-                        const fade = Math.max(0, 1 - dt / 0.85);
-
-                        // Sputtering, dying red ember numeral flicker (like a dying neon sign / match)
-                        const flicker = Math.sin(dt * 38) > 0 ? (0.7 + Math.random() * 0.3) : 0.1;
-                        const mat = die.mesh.material as THREE.MeshStandardMaterial;
-                        mat.emissive.setHex(0xef4444);
-                        mat.emissiveIntensity = 2.2 * flicker * fade;
-
-                        // Edge lines sputter crimson then extinguish into cold charcoal
-                        die.edgeMaterial.color.setRGB(
-                            0.75 * fade + 0.15,
-                            0.15 * fade + 0.15,
-                            0.15 * fade + 0.20,
-                        );
-                        die.edgeMaterial.opacity = 0.85 * fade + 0.25;
-
-                        // Disappointed shudder on impact
-                        if (dt >= 0 && dt <= 0.35) {
-                            const quiver = Math.sin(dt * 42) * Math.exp(-dt * 12) * 0.04;
-                            die.mesh.rotation.z += quiver;
-                        }
-                    }
-                } else {
-                    // Interpolate between keyframes
-                    const progress = elapsed / traj.duration;
-                    const exactIdx = progress * (frames.length - 1);
-                    const idx0 = Math.floor(exactIdx);
-                    const idx1 = Math.min(frames.length - 1, idx0 + 1);
-                    const alpha = exactIdx - idx0;
-
-                    const f0 = frames[idx0];
-                    const f1 = frames[idx1];
-
-                    pA.set(f0.position[0], f0.position[1], f0.position[2]);
-                    pB.set(f1.position[0], f1.position[1], f1.position[2]);
-                    die.mesh.position.lerpVectors(pA, pB, alpha);
-
-                    qA.set(f0.quaternion[0], f0.quaternion[1], f0.quaternion[2], f0.quaternion[3]);
-                    qB.set(f1.quaternion[0], f1.quaternion[1], f1.quaternion[2], f1.quaternion[3]);
-                    die.mesh.quaternion.slerpQuaternions(qA, qB, alpha);
+                if (supportedDice[i].sides === 20 && supportedDice[i].result === 20 && elapsed >= traj.duration) {
+                    const postT = elapsed - traj.duration;
+                    const pulse = (Math.sin(postT * 6) + 1) / 2;
+                    const mat = die.mesh.material as THREE.MeshStandardMaterial;
+                    mat.emissiveIntensity = 0.85 + pulse * 0.95;
                 }
             }
 
-            // Animate Nat 20 textured shockwaves
-            for (const sw of shockwaveMeshes) {
-                if (elapsed >= sw.startTime && elapsed <= sw.startTime + sw.duration) {
-                    const t = (elapsed - sw.startTime) / sw.duration;
-                    const ease = 1 - Math.pow(1 - t, 3); // Cubic ease out
-                    const currentScale = sw.startScale + (sw.endScale - sw.startScale) * ease;
-                    sw.mesh.scale.set(currentScale, currentScale, 1);
-                    sw.mesh.rotation.z += sw.spinSpeed * 0.016; // Subtle energetic swirl
-                    (sw.mesh.material as THREE.MeshBasicMaterial).opacity = sw.maxOpacity * (1 - t) * (1 - t);
-                    sw.mesh.visible = true;
+            // Animate Shockwaves
+            for (let i = 0; i < shockwavePlanes.length; i++) {
+                const sw = shockwavePlanes[i];
+                const mat = shockwaveMaterials[i];
+                const dt = elapsed - sw.startTime;
+                if (dt >= 0 && dt <= sw.duration) {
+                    const progress = dt / sw.duration;
+                    const easeProgress = 1 - Math.pow(1 - progress, 3);
+                    const currentRadius = sw.maxRadius * easeProgress;
+                    sw.mesh.scale.set(currentRadius, currentRadius, 1);
+                    mat.opacity = Math.sin(progress * Math.PI) * 0.95;
                 } else {
-                    sw.mesh.visible = false;
+                    mat.opacity = 0;
                 }
             }
 
-            // Animate Nat 20 spark particle bursts
+            // Animate Spark Bursts
+            const gravity = -9.8;
             for (const sb of sparkBursts) {
                 const dt = elapsed - sb.startTime;
                 if (dt >= 0 && dt <= sb.duration) {
-                    const posAttr = sb.geo.attributes.position;
-                    const posArr = posAttr.array as Float32Array;
-                    const gravity = 18.0;
+                    const progress = dt / sb.duration;
+                    sb.mat.opacity = Math.sin(progress * Math.PI);
 
-                    for (let s = 0; s < sb.count; s++) {
-                        const idx = s * 3;
-                        posArr[idx] = sb.initialPositions[idx] + sb.velocities[idx] * dt;
-                        const vy = sb.velocities[idx + 1];
-                        posArr[idx + 1] = Math.max(0.02, sb.initialPositions[idx + 1] + vy * dt - 0.5 * gravity * dt * dt);
-                        posArr[idx + 2] = sb.initialPositions[idx + 2] + sb.velocities[idx + 2] * dt;
+                    const posAttr = sb.geo.getAttribute('position') as THREE.BufferAttribute;
+                    const posArray = posAttr.array as Float32Array;
+                    const particleCount = posArray.length / 3;
+
+                    for (let p = 0; p < particleCount; p++) {
+                        posArray[p * 3] = sb.basePositions[p * 3] + sb.velocities[p * 3] * dt;
+                        posArray[p * 3 + 1] = Math.max(0.02, sb.basePositions[p * 3 + 1] + sb.velocities[p * 3 + 1] * dt + 0.5 * gravity * dt * dt);
+                        posArray[p * 3 + 2] = sb.basePositions[p * 3 + 2] + sb.velocities[p * 3 + 2] * dt;
                     }
                     posAttr.needsUpdate = true;
-                    const progress = dt / sb.duration;
-                    sb.mat.opacity = 0.95 * Math.pow(1 - progress, 1.8);
-                    sb.points.visible = true;
                 } else {
-                    sb.points.visible = false;
+                    sb.mat.opacity = 0;
                 }
             }
 
-            // Animate Nat 1 gentle smoke puff
+            // Animate Smoke Bursts
             for (const smk of smokeBursts) {
                 const dt = elapsed - smk.startTime;
                 if (dt >= 0 && dt <= smk.duration) {
-                    const posAttr = smk.geo.attributes.position;
-                    const posArr = posAttr.array as Float32Array;
-
-                    for (let s = 0; s < smk.count; s++) {
-                        const idx = s * 3;
-                        posArr[idx] = smk.initialPositions[idx] + smk.velocities[idx] * dt * 0.85;
-                        const vy = smk.velocities[idx + 1];
-                        posArr[idx + 1] = smk.initialPositions[idx + 1] + vy * dt * (1 - 0.3 * (dt / smk.duration));
-                        posArr[idx + 2] = smk.initialPositions[idx + 2] + smk.velocities[idx + 2] * dt * 0.85;
-                    }
-                    posAttr.needsUpdate = true;
                     const progress = dt / smk.duration;
-                    smk.mat.size = smk.baseSize * (1.0 + progress * 0.8);
-                    const fadeIn = Math.min(1.0, progress / 0.15);
-                    const fadeOut = Math.pow(1 - progress, 1.5);
-                    smk.mat.opacity = 0.65 * fadeIn * fadeOut;
-                    smk.points.visible = true;
+                    const scale = 1.0 + progress * 1.5;
+                    smk.mesh.scale.set(scale, scale, 1);
+                    smk.mat.opacity = (1 - progress) * 0.45;
                 } else {
-                    smk.points.visible = false;
+                    smk.mat.opacity = 0;
                 }
             }
 
@@ -789,17 +594,14 @@
             let isGlintActive = false;
             for (const nl of nat20Lights) {
                 const dt = elapsed - nl.startTime;
-                const sweepDuration = 1.0; // 1.0s full 360-degree flourishing pass
+                const sweepDuration = 1.0;
                 if (dt >= 0 && dt <= sweepDuration) {
                     isGlintActive = true;
                     const progress = dt / sweepDuration;
 
-                    // Epicenter ground flash
                     const flash = Math.max(0, 1 - dt / 0.75);
                     nl.epicenterLight.intensity = 5.5 * Math.pow(flash, 2.2);
 
-                    // Orbit the specular light 360 degrees around the die at close range
-                    // Starts from bottom-front (-135 deg), sweeps around back, and glints across top face
                     const angle = -Math.PI * 0.75 + progress * Math.PI * 2.0;
                     const orbitRadius = 2.8;
                     const orbitHeight = 2.2 + Math.sin(progress * Math.PI) * 1.4;
@@ -810,7 +612,6 @@
                         nl.restZ + Math.sin(angle) * orbitRadius,
                     );
 
-                    // Smooth intensity envelope: fast ease-in, sustained bright glint across the sweep, smooth ease-out
                     const fadeIn = Math.min(1.0, progress / 0.15);
                     const fadeOut = Math.min(1.0, (1.0 - progress) / 0.20);
                     const envelope = fadeIn * fadeOut;
@@ -822,8 +623,6 @@
                 }
             }
 
-            // Two-pass rendering: Pass 1 renders normal dice, floor, and particles on Layer 0.
-            // Pass 2 renders ONLY Nat 20 dice on Layer 1 during the active glint flourish window.
             renderer.clear();
             camera.layers.set(0);
             renderer.render(scene, camera);
@@ -833,10 +632,27 @@
                 renderer.render(scene, camera);
             }
 
-            if (elapsed >= maxDuration + holdDuration) {
+            const totalDuration = maxDuration + holdDuration;
+            const fadeDuration = 0.5;
+            if (elapsed >= totalDuration - fadeDuration) {
+                const fadeProgress = Math.min(1.0, (elapsed - (totalDuration - fadeDuration)) / fadeDuration);
+                const fadeOpacity = Math.max(0.0, 1.0 - fadeProgress);
+
+                for (const die of activeDice) {
+                    const mat = die.mesh.material as THREE.MeshStandardMaterial;
+                    mat.opacity = fadeOpacity;
+                    die.edgeMaterial.opacity = 0.90 * fadeOpacity;
+                }
+                if (shadowPlaneMat) {
+                    shadowPlaneMat.opacity = 0.38 * fadeOpacity;
+                }
+            }
+
+            if (elapsed >= totalDuration) {
                 if (!completed) {
                     completed = true;
                     onComplete();
+                    clearRoll();
                 }
             } else {
                 animFrameId = requestAnimationFrame(animate);
@@ -844,62 +660,137 @@
         };
 
         animFrameId = requestAnimationFrame(animate);
+    }
+
+    $: if (mounted) {
+        if (dice && dice.length > 0) {
+            startRoll(dice, theme, seed);
+        } else {
+            clearRoll();
+        }
+    }
+
+    $: if (mounted && camera && renderer && (width > 0 || height > 0)) {
+        updateDimensions(width, height);
+    }
+
+    onMount(() => {
+        if (!container) return;
+
+        const initialW = (width > 0 ? width : window.innerWidth) || 1200;
+        const initialH = (height > 0 ? height : window.innerHeight) || 800;
+        const aspect = initialW / initialH;
+
+        scene = new THREE.Scene();
+        camera = new THREE.PerspectiveCamera(fov, aspect, 0.1, 100);
+        camera.position.set(0, 18, 3.5);
+        camera.lookAt(0, 0, 0);
+
+        renderer = new THREE.WebGLRenderer({
+            alpha: true,
+            antialias: true,
+            powerPreference: 'high-performance',
+        });
+        renderer.autoClear = false;
+        renderer.setSize(initialW, initialH);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+        renderer.setClearColor(0x000000, 0);
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        renderer.toneMappingExposure = 1.05;
+        renderer.outputColorSpace = THREE.SRGBColorSpace;
+        container.appendChild(renderer.domElement);
+
+        // Ambient Light
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.55);
+        ambientLight.layers.enable(1);
+        scene.add(ambientLight);
+
+        // Directional Key Light
+        const dirLight = new THREE.DirectionalLight(0xffffff, 1.85);
+        dirLight.position.set(-8, 22, -10);
+        dirLight.castShadow = true;
+        dirLight.shadow.mapSize.width = 1024;
+        dirLight.shadow.mapSize.height = 1024;
+        dirLight.shadow.camera.near = 0.5;
+        dirLight.shadow.camera.far = 55;
+        const shadowExtent = 18;
+        dirLight.shadow.camera.left = -shadowExtent;
+        dirLight.shadow.camera.right = shadowExtent;
+        dirLight.shadow.camera.top = shadowExtent;
+        dirLight.shadow.camera.bottom = -shadowExtent;
+        dirLight.shadow.bias = -0.0008;
+        dirLight.layers.enable(1);
+        scene.add(dirLight);
+
+        // Fill Light
+        const fillLight = new THREE.DirectionalLight(0xaaccff, 0.50);
+        fillLight.position.set(10, 12, 10);
+        fillLight.layers.enable(1);
+        scene.add(fillLight);
+
+        // Transparent shadow receiver plane (floor table)
+        const shadowPlaneGeo = new THREE.PlaneGeometry(80, 80);
+        shadowPlaneMat = new THREE.ShadowMaterial({
+            opacity: 0.38,
+        });
+        const shadowPlane = new THREE.Mesh(shadowPlaneGeo, shadowPlaneMat);
+        shadowPlane.rotation.x = -Math.PI / 2;
+        shadowPlane.position.y = 0;
+        shadowPlane.receiveShadow = true;
+        scene.add(shadowPlane);
+
+        // Reusable Particle Textures
+        shockwaveTexture = createShockwaveTexture();
+        sparkTexture = createSparkTexture();
+        smokeTexture = createSmokeTexture();
+        shockwavePlaneGeo = new THREE.PlaneGeometry(1, 1);
+
+        // Eager Pre-warming: Generate all polyhedral textures and pre-compile shader pipelines ahead of time
+        prewarmDiceAssets();
+        const d20Def = getDieDefinition(20);
+        if (d20Def) {
+            const dummyMat = createDiceMaterial(20, d20Def.faceValues, DEFAULT_THEME);
+            const dummyMesh = new THREE.Mesh(d20Def.geometry, dummyMat);
+            scene.add(dummyMesh);
+            renderer.compile(scene, camera);
+            scene.remove(dummyMesh);
+            dummyMat.dispose();
+        }
 
         const handleResize = () => {
             if (!container) return;
             const w = container.clientWidth || window.innerWidth;
             const h = container.clientHeight || window.innerHeight;
-            camera.aspect = w / h;
-            camera.updateProjectionMatrix();
-            renderer.setSize(w, h);
+            updateDimensions(w, h);
         };
         window.addEventListener('resize', handleResize);
 
+        mounted = true;
+
+        if (dice && dice.length > 0) {
+            startRoll(dice, theme, seed);
+        }
+
         return () => {
             window.removeEventListener('resize', handleResize);
-            if (animFrameId) cancelAnimationFrame(animFrameId);
+            clearRoll();
 
-            // Resource cleanup
             shockwaveTexture.dispose();
             sparkTexture.dispose();
             smokeTexture.dispose();
             shockwavePlaneGeo.dispose();
-            for (const mat of shockwaveMaterials) {
-                mat.dispose();
-            }
 
-            for (const sb of sparkBursts) {
-                sb.geo.dispose();
-                sb.mat.dispose();
-            }
-
-            for (const smk of smokeBursts) {
-                smk.geo.dispose();
-                smk.mat.dispose();
-            }
-
-            for (const nl of nat20Lights) {
-                scene.remove(nl.epicenterLight);
-                nl.epicenterLight.dispose();
-                scene.remove(nl.glintLight);
-                nl.glintLight.dispose();
-            }
-
-            for (const die of activeDice) {
-                die.mesh.geometry.dispose();
-                die.edgeLines.geometry.dispose();
-                die.edgeMaterial.dispose();
-                if (Array.isArray(die.mesh.material)) {
-                    die.mesh.material.forEach(m => m.dispose());
-                } else {
-                    die.mesh.material.dispose();
-                }
-            }
             renderer.dispose();
             if (renderer.domElement.parentElement) {
                 renderer.domElement.parentElement.removeChild(renderer.domElement);
             }
         };
+    });
+
+    onDestroy(() => {
+        clearRoll();
     });
 </script>
 
