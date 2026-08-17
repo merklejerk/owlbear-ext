@@ -390,11 +390,11 @@ export function createDiceTextureAtlas(
         // 2. Crisp Inlaid Numerals & Trench Masks (G & B channels)
         if (sides === 4 && f < D4_FACE_CORNERS.length) {
             const [topVal, blVal, brVal] = D4_FACE_CORNERS[f];
-            const fontSize = Math.floor(cellSize * 0.22);
+            const fontSize = Math.floor(cellSize * 0.30);
 
-            drawFaceNumeralMask(ctx, topVal.toString(), centerX, centerY - cellSize * 0.22, fontSize, fontName, 0);
-            drawFaceNumeralMask(ctx, blVal.toString(), centerX - cellSize * 0.19, centerY + cellSize * 0.11, fontSize, fontName, (-2 * Math.PI) / 3);
-            drawFaceNumeralMask(ctx, brVal.toString(), centerX + cellSize * 0.19, centerY + cellSize * 0.11, fontSize, fontName, (2 * Math.PI) / 3);
+            drawFaceNumeralMask(ctx, topVal.toString(), centerX, centerY - cellSize * 0.30, fontSize, fontName, 0);
+            drawFaceNumeralMask(ctx, blVal.toString(), centerX - cellSize * 0.26, centerY + cellSize * 0.15, fontSize, fontName, (-2 * Math.PI) / 3);
+            drawFaceNumeralMask(ctx, brVal.toString(), centerX + cellSize * 0.26, centerY + cellSize * 0.15, fontSize, fontName, (2 * Math.PI) / 3);
         } else {
             const text = val.toString();
             const fontSize = Math.floor(cellSize * (text.length > 2 ? 0.36 : 0.46));
@@ -406,6 +406,7 @@ export function createDiceTextureAtlas(
     texture.generateMipmaps = true;
     texture.minFilter = THREE.LinearMipmapLinearFilter;
     texture.magFilter = THREE.LinearFilter;
+    texture.anisotropy = 8;
     return texture;
 }
 
@@ -545,16 +546,16 @@ export function createDiceNormalMapAtlas(
 
         if (sides === 4 && f < D4_FACE_CORNERS.length) {
             const [topVal, blVal, brVal] = D4_FACE_CORNERS[f];
-            const fontSize = Math.floor(cellSize * 0.22);
+            const fontSize = Math.floor(cellSize * 0.30);
 
             // Top apex numeral
-            engraveHeightmapNumeral(hCtx, topVal.toString(), centerX, centerY - cellSize * 0.22, fontSize, 0);
+            engraveHeightmapNumeral(hCtx, topVal.toString(), centerX, centerY - cellSize * 0.30, fontSize, 0);
 
             // Bottom-left apex numeral
-            engraveHeightmapNumeral(hCtx, blVal.toString(), centerX - cellSize * 0.19, centerY + cellSize * 0.11, fontSize, (-2 * Math.PI) / 3);
+            engraveHeightmapNumeral(hCtx, blVal.toString(), centerX - cellSize * 0.26, centerY + cellSize * 0.15, fontSize, (-2 * Math.PI) / 3);
 
             // Bottom-right apex numeral
-            engraveHeightmapNumeral(hCtx, brVal.toString(), centerX + cellSize * 0.19, centerY + cellSize * 0.11, fontSize, (2 * Math.PI) / 3);
+            engraveHeightmapNumeral(hCtx, brVal.toString(), centerX + cellSize * 0.26, centerY + cellSize * 0.15, fontSize, (2 * Math.PI) / 3);
         } else {
             const text = val.toString();
             const fontSize = Math.floor(cellSize * (text.length > 2 ? 0.36 : 0.46));
@@ -615,6 +616,7 @@ export function createDiceNormalMapAtlas(
     normalTexture.generateMipmaps = true;
     normalTexture.minFilter = THREE.LinearMipmapLinearFilter;
     normalTexture.magFilter = THREE.LinearFilter;
+    normalTexture.anisotropy = 8;
     return normalTexture;
 }
 
@@ -699,6 +701,60 @@ export function getTextureForDie(
 }
 
 /**
+ * Calculates a harmonic, high-contrast numeral and trench color palette tailored
+ * to the die's body resin color rather than a generic binary black/white.
+ */
+export function getComplementaryNumeralPalette(h: number, s: number, l: number): {
+    numeralColor: THREE.Color;
+    trenchColor: THREE.Color;
+} {
+    let rNum: number, gNum: number, bNum: number;
+    let rTr: number, gTr: number, bTr: number;
+
+    if (s < 8) {
+        // Achromatic (Obsidian Black to Carrara White)
+        if (l > 55) {
+            // White / Alabaster: Inlaid deep midnight slate ink
+            [rNum, gNum, bNum] = hslToRgb(230, 25, 12);
+            [rTr, gTr, bTr] = hslToRgb(230, 20, 4);
+        } else {
+            // Black / Charcoal: Inlaid radiant warm gold
+            [rNum, gNum, bNum] = hslToRgb(46, 90, 78);
+            [rTr, gTr, bTr] = hslToRgb(0, 0, 2);
+        }
+    } else if (l > 52) {
+        // Light / Pastel / Solar Yellow: Inlaid complementary deep jewel tone
+        const compHue = (h + 180) % 360;
+        const compSat = Math.max(45, Math.min(75, s));
+        [rNum, gNum, bNum] = hslToRgb(compHue, compSat, 13); // Deep rich complementary ink (e.g. midnight sapphire on yellow)
+        [rTr, gTr, bTr] = hslToRgb(compHue, compSat, 4);
+    } else {
+        // Dark / Mid Jewel Resin: Inlaid radiant gilded solar gold or champagne gold
+        let goldHue = 45;
+        if (h >= 330 || h <= 35) {
+            // Red / Ruby / Crimson: warm gilded champagne
+            goldHue = 48;
+        } else if (h >= 85 && h <= 175) {
+            // Green / Emerald: imperial solar gold
+            goldHue = 42;
+        } else if (h > 175 && h < 330) {
+            // Blue / Purple: brilliant celestial gold
+            goldHue = 46;
+        } else {
+            // Amber / Orange / Golden: rich burnished gold
+            goldHue = 45;
+        }
+        [rNum, gNum, bNum] = hslToRgb(goldHue, 90, 80);
+        [rTr, gTr, bTr] = hslToRgb(h, Math.max(0, s - 15), 3);
+    }
+
+    return {
+        numeralColor: new THREE.Color(rNum / 255, gNum / 255, bNum / 255),
+        trenchColor: new THREE.Color(rTr / 255, gTr / 255, bTr / 255),
+    };
+}
+
+/**
  * Creates a high-performance MeshStandardMaterial with player color tinting injected via shader uniforms.
  * Shares the same single texture atlas across all players without redundant texture allocations.
  */
@@ -743,6 +799,9 @@ export function createDiceMaterial(
     const cloudColor = new THREE.Color(r2 / 255, g2 / 255, b2 / 255);
     const veinColor = new THREE.Color(r3 / 255, g3 / 255, b3 / 255);
 
+    // Compute harmonic complementary numeral & trench palette based on resin color
+    const { numeralColor, trenchColor } = getComplementaryNumeralPalette(h, s, l);
+
     const mat = new THREE.MeshStandardMaterial({
         map: baseTexture,
         normalMap,
@@ -758,11 +817,15 @@ export function createDiceMaterial(
         shader.uniforms.uBodyColor = { value: bodyColor };
         shader.uniforms.uCloudColor = { value: cloudColor };
         shader.uniforms.uVeinColor = { value: veinColor };
+        shader.uniforms.uNumeralColor = { value: numeralColor };
+        shader.uniforms.uTrenchColor = { value: trenchColor };
 
         shader.fragmentShader = `
             uniform vec3 uBodyColor;
             uniform vec3 uCloudColor;
             uniform vec3 uVeinColor;
+            uniform vec3 uNumeralColor;
+            uniform vec3 uTrenchColor;
         ` + shader.fragmentShader;
 
         shader.fragmentShader = shader.fragmentShader.replace(
@@ -783,10 +846,10 @@ export function createDiceMaterial(
                 resinCol = mix(resinCol, uVeinColor, veinFactor * 0.40);
 
                 // 3. Dark engraved trench shadow
-                vec3 finalCol = mix(resinCol, vec3(0.01, 0.01, 0.02), trenchMask * (1.0 - numeralMask));
+                vec3 finalCol = mix(resinCol, uTrenchColor, trenchMask * (1.0 - numeralMask));
 
-                // 4. Inlaid enamel white numerals
-                finalCol = mix(finalCol, vec3(0.98, 0.98, 0.96), numeralMask);
+                // 4. Inlaid high-contrast numerals
+                finalCol = mix(finalCol, uNumeralColor, numeralMask);
 
                 diffuseColor = vec4(finalCol, 1.0);
             #endif
@@ -888,16 +951,16 @@ export function createDiceEmissiveAtlas(
 
         if (sides === 4 && f < D4_FACE_CORNERS.length) {
             const [topVal, blVal, brVal] = D4_FACE_CORNERS[f];
-            const fontSize = Math.floor(cellSize * 0.22);
+            const fontSize = Math.floor(cellSize * 0.30);
 
             // Top apex numeral
-            drawEmissiveNumeral(ctx, topVal.toString(), centerX, centerY - cellSize * 0.22, fontSize, fontName, 0);
+            drawEmissiveNumeral(ctx, topVal.toString(), centerX, centerY - cellSize * 0.30, fontSize, fontName, 0);
 
             // Bottom-left apex numeral
-            drawEmissiveNumeral(ctx, blVal.toString(), centerX - cellSize * 0.19, centerY + cellSize * 0.11, fontSize, fontName, (-2 * Math.PI) / 3);
+            drawEmissiveNumeral(ctx, blVal.toString(), centerX - cellSize * 0.26, centerY + cellSize * 0.15, fontSize, fontName, (-2 * Math.PI) / 3);
 
             // Bottom-right apex numeral
-            drawEmissiveNumeral(ctx, brVal.toString(), centerX + cellSize * 0.19, centerY + cellSize * 0.11, fontSize, fontName, (2 * Math.PI) / 3);
+            drawEmissiveNumeral(ctx, brVal.toString(), centerX + cellSize * 0.26, centerY + cellSize * 0.15, fontSize, fontName, (2 * Math.PI) / 3);
         } else {
             const text = val.toString();
             const fontSize = Math.floor(cellSize * (text.length > 2 ? 0.36 : 0.46));
@@ -909,6 +972,7 @@ export function createDiceEmissiveAtlas(
     texture.generateMipmaps = true;
     texture.minFilter = THREE.LinearMipmapLinearFilter;
     texture.magFilter = THREE.LinearFilter;
+    texture.anisotropy = 8;
     return texture;
 }
 

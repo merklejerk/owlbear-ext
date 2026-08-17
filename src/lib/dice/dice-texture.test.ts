@@ -1,5 +1,13 @@
 import { describe, it, expect } from 'vitest';
-import { createPlayerDiceTheme, DEFAULT_THEME, getNormalMapForDie, getTextureForDie, getEmissiveMapForDie, createDiceMaterial } from './dice-texture';
+import {
+    createPlayerDiceTheme,
+    DEFAULT_THEME,
+    getNormalMapForDie,
+    getTextureForDie,
+    getEmissiveMapForDie,
+    createDiceMaterial,
+    getComplementaryNumeralPalette,
+} from './dice-texture';
 
 describe('dice theme generator', () => {
     it('returns default theme when no player info provided', () => {
@@ -83,6 +91,38 @@ describe('dice theme generator', () => {
 
         expect(mat).toBeDefined();
         expect(mat.map).toBeDefined();
+        expect(mat.normalMap).toBeDefined();
         expect(typeof mat.onBeforeCompile).toBe('function');
+    });
+
+    describe('harmonic complementary numeral palette', () => {
+        it('inlays deep sapphire ink on bright yellow dice', () => {
+            // Yellow hue = 60, high lightness
+            const { numeralColor, trenchColor } = getComplementaryNumeralPalette(60, 100, 65);
+            // Complementary hue (240 = blue) -> blue channel dominates
+            expect(numeralColor.b).toBeGreaterThan(numeralColor.r);
+            expect(numeralColor.b).toBeGreaterThan(numeralColor.g);
+            expect(trenchColor).toBeDefined();
+        });
+
+        it('inlays gilded gold on deep ruby and sapphire dice', () => {
+            // Ruby red hue = 0, low lightness
+            const ruby = getComplementaryNumeralPalette(0, 90, 40);
+            expect(ruby.numeralColor.r).toBeGreaterThan(0.6); // warm gold
+            expect(ruby.numeralColor.g).toBeGreaterThan(0.6);
+
+            // Sapphire blue hue = 220, low lightness
+            const sapphire = getComplementaryNumeralPalette(220, 90, 40);
+            expect(sapphire.numeralColor.r).toBeGreaterThan(0.6); // radiant gold
+            expect(sapphire.numeralColor.g).toBeGreaterThan(0.6);
+        });
+
+        it('inlays radiant gold on obsidian black and deep slate ink on alabaster white', () => {
+            const black = getComplementaryNumeralPalette(0, 0, 4);
+            expect(black.numeralColor.r).toBeGreaterThan(0.6); // gold on black
+
+            const white = getComplementaryNumeralPalette(0, 0, 95);
+            expect(white.numeralColor.r).toBeLessThan(0.3); // deep slate on white
+        });
     });
 });
