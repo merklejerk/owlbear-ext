@@ -824,21 +824,22 @@ export function createDiceMaterial(
 
     if (s === 0) {
         // Achromatic / Monochromatic (Obsidian Black to Carrara White)
-        const lCloud = isLight ? Math.max(5, l - 6) : Math.min(95, l + 6);
-        const lVein = isLight ? Math.max(5, l - 16) : Math.min(95, l + 14);
+        const lCloud = isLight ? Math.max(5, l - 12) : Math.min(95, l + 8);
+        const lVein = isLight ? Math.max(5, l - 28) : Math.min(95, l + 16);
 
         [r1, g1, b1] = hslToRgb(0, 0, l);
         [r2, g2, b2] = hslToRgb(0, 0, lCloud);
-        [r3, g3, b3] = hslToRgb(0, 0, lVein);
+        [r3, g3, b3] = hslToRgb(220, 10, lVein);
     } else {
         // Saturated Tones (Deep Jewel, Mid, or Pastel)
-        const lCloud = isLight ? Math.max(5, l - 6) : Math.min(95, l + 6);
-        const lVein = isLight ? Math.max(5, l - 14) : Math.min(95, l + 14);
-        const hVein = (h + (isLight ? -10 : 12) + 360) % 360;
+        const lCloud = isLight ? Math.max(5, l - 12) : Math.min(95, l + 8);
+        const lVein = isLight ? Math.max(5, l - 25) : Math.min(95, l + 16);
+        const hVein = (h + (isLight ? -18 : 14) + 360) % 360;
+        const sVein = isLight ? Math.min(100, s + 25) : Math.min(100, s + 8);
 
         [r1, g1, b1] = hslToRgb(h, s, l);
-        [r2, g2, b2] = hslToRgb(h, Math.max(0, s - 7), lCloud);
-        [r3, g3, b3] = hslToRgb(hVein, Math.min(100, s + 5), lVein);
+        [r2, g2, b2] = hslToRgb(h, Math.max(0, s - 6), lCloud);
+        [r3, g3, b3] = hslToRgb(hVein, sVein, lVein);
     }
 
     const bodyColor = new THREE.Color(r1 / 255, g1 / 255, b1 / 255);
@@ -848,11 +849,13 @@ export function createDiceMaterial(
     // Compute harmonic complementary numeral & trench palette based on resin color
     const { numeralColor, trenchColor } = getComplementaryNumeralPalette(h, s, l);
 
+    const normalIntensity = isLight ? 1.65 : 0.90;
+
     const mat = new THREE.MeshStandardMaterial({
         map: baseTexture,
         normalMap,
-        normalScale: new THREE.Vector2(0.85, 0.85),
-        roughness: 0.18,
+        normalScale: new THREE.Vector2(normalIntensity, normalIntensity),
+        roughness: isLight ? 0.22 : 0.18,
         metalness: 0.05,
         transparent: true,
         opacity: 1.0,
@@ -867,6 +870,7 @@ export function createDiceMaterial(
         shader.uniforms.uVeinColor = { value: veinColor };
         shader.uniforms.uNumeralColor = { value: numeralColor };
         shader.uniforms.uTrenchColor = { value: trenchColor };
+        shader.uniforms.uIsLight = { value: isLight ? 1.0 : 0.0 };
 
         shader.fragmentShader = `
             uniform vec3 uBodyColor;
@@ -874,6 +878,7 @@ export function createDiceMaterial(
             uniform vec3 uVeinColor;
             uniform vec3 uNumeralColor;
             uniform vec3 uTrenchColor;
+            uniform float uIsLight;
         ` + shader.fragmentShader;
 
         shader.fragmentShader = shader.fragmentShader.replace(
@@ -886,17 +891,29 @@ export function createDiceMaterial(
                 float trenchMask  = sampledMap.b; // 1.0 inside engraved trench
                 float veinNoise   = sampledMap.a; // 0.0 - 1.0 delicate mineral vein
 
-                // 1. Subtle translucent resin body with organic cloud variation
-                vec3 resinCol = mix(uBodyColor, uCloudColor, cloudNoise * 0.40);
+                // 1. Translucent resin body with organic cloud variation
+                float cloudStrength = mix(0.40, 0.70, uIsLight);
+                vec3 resinCol = mix(uBodyColor, uCloudColor, cloudNoise * cloudStrength);
 
-                // 2. Soft, delicate mineral vein wisps
-                float veinFactor = smoothstep(0.35, 0.95, veinNoise);
-                resinCol = mix(resinCol, uVeinColor, veinFactor * 0.40);
+                // 2. Delicate mineral vein wisps (amplified contrast on light dice)
+                float veinThreshold = mix(0.35, 0.25, uIsLight);
+                float veinFactor = smoothstep(veinThreshold, 0.95, veinNoise);
+                float veinStrength = mix(0.40, 0.75, uIsLight);
+                resinCol = mix(resinCol, uVeinColor, veinFactor * veinStrength);
 
-                // 3. Dark engraved trench shadow
+                #ifdef USE_NORMALMAP
+                    // 3. Micro-cavity occlusion for scratches and pitting (subtle tactile micro-shadows)
+                    vec4 sampledNormal = texture2D(normalMap, vNormalMapUv);
+                    vec2 normalSlope = (sampledNormal.xy - 0.5) * 2.0;
+                    float pitDepth = length(normalSlope);
+                    float microOcclusion = 1.0 - smoothstep(0.06, 0.50, pitDepth) * mix(0.18, 0.42, uIsLight);
+                    resinCol *= microOcclusion;
+                #endif
+
+                // 4. Dark engraved trench shadow
                 vec3 finalCol = mix(resinCol, uTrenchColor, trenchMask * (1.0 - numeralMask));
 
-                // 4. Inlaid high-contrast numerals
+                // 5. Inlaid high-contrast numerals
                 finalCol = mix(finalCol, uNumeralColor, numeralMask);
 
                 diffuseColor = vec4(finalCol, opacity);

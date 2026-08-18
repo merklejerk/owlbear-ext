@@ -383,7 +383,9 @@
         for (let i = 0; i < count; i++) {
             const item = supportedDice[i];
             const traj = trajectories[i];
-            const restPos = multiItems[i].restingPosition;
+            const lastKf = traj.keyframes[traj.keyframes.length - 1];
+            const actualRestX = lastKf ? lastKf.position[0] : multiItems[i].restingPosition.x;
+            const actualRestZ = lastKf ? lastKf.position[2] : multiItems[i].restingPosition.z;
 
             if (item.sides === 20 && item.result === 20) {
                 // Shockwave Ring on Nat 20 Impact
@@ -399,7 +401,7 @@
 
                 const swMesh = new THREE.Mesh(shockwavePlaneGeo, swMat);
                 swMesh.rotation.x = -Math.PI / 2;
-                swMesh.position.set(restPos.x, 0.02, restPos.z);
+                swMesh.position.set(actualRestX, 0.02, actualRestZ);
                 swMesh.scale.set(0.1, 0.1, 1);
                 scene.add(swMesh);
 
@@ -417,13 +419,13 @@
                 const sparkBasePos = new Float32Array(sparkCount * 3);
 
                 for (let p = 0; p < sparkCount; p++) {
-                    sparkPositions[p * 3] = restPos.x;
+                    sparkPositions[p * 3] = actualRestX;
                     sparkPositions[p * 3 + 1] = 0.05;
-                    sparkPositions[p * 3 + 2] = restPos.z;
+                    sparkPositions[p * 3 + 2] = actualRestZ;
 
-                    sparkBasePos[p * 3] = restPos.x;
+                    sparkBasePos[p * 3] = actualRestX;
                     sparkBasePos[p * 3 + 1] = 0.05;
-                    sparkBasePos[p * 3 + 2] = restPos.z;
+                    sparkBasePos[p * 3 + 2] = actualRestZ;
 
                     const theta = (p / sparkCount) * Math.PI * 2 + (rng() - 0.5) * 0.4;
                     const speed = 4.5 + rng() * 6.0;
@@ -470,7 +472,7 @@
                 });
                 const smokeMesh = new THREE.Mesh(smokeGeo, smokeMat);
                 smokeMesh.rotation.x = -Math.PI / 2;
-                smokeMesh.position.set(restPos.x, 0.015, restPos.z);
+                smokeMesh.position.set(actualRestX, 0.015, actualRestZ);
                 scene.add(smokeMesh);
 
                 smokeBursts.push({
@@ -484,7 +486,7 @@
 
                 // Epicenter Burst Light & Dynamic Glint Orbit Light
                 const epicLight = new THREE.PointLight(0xffdf77, 0, 16, 2.0);
-                epicLight.position.set(restPos.x, 0.8, restPos.z);
+                epicLight.position.set(actualRestX, 0.8, actualRestZ);
                 scene.add(epicLight);
 
                 const glint = new THREE.PointLight(0xffffff, 0, 10, 2.0);
@@ -495,8 +497,82 @@
                     epicenterLight: epicLight,
                     glintLight: glint,
                     startTime: traj.duration,
-                    restX: restPos.x,
-                    restZ: restPos.z,
+                    restX: actualRestX,
+                    restZ: actualRestZ,
+                });
+            }
+
+            if (item.sides === 20 && item.result === 1) {
+                // 1. Wispy Rising Smoke Plume (Ash cloud)
+                const smokeGeo = new THREE.PlaneGeometry(baseRadius * 3.5, baseRadius * 3.5);
+                const smokeMat = new THREE.MeshBasicMaterial({
+                    map: smokeTexture,
+                    transparent: true,
+                    opacity: 0.0,
+                    depthWrite: false,
+                    blending: THREE.NormalBlending,
+                    side: THREE.DoubleSide,
+                });
+                const smokeMesh = new THREE.Mesh(smokeGeo, smokeMat);
+                smokeMesh.rotation.x = -Math.PI / 2;
+                smokeMesh.position.set(actualRestX, 0.015, actualRestZ);
+                scene.add(smokeMesh);
+
+                smokeBursts.push({
+                    mesh: smokeMesh,
+                    geo: smokeGeo,
+                    mat: smokeMat,
+                    startTime: traj.duration,
+                    duration: 1.5,
+                    active: false,
+                });
+
+                // 2. Dying Red/Orange Ember Sparks sputtering upward
+                const emberCount = 24;
+                const emberPositions = new Float32Array(emberCount * 3);
+                const emberVelocities = new Float32Array(emberCount * 3);
+                const emberBasePos = new Float32Array(emberCount * 3);
+
+                for (let p = 0; p < emberCount; p++) {
+                    emberPositions[p * 3] = actualRestX;
+                    emberPositions[p * 3 + 1] = 0.05;
+                    emberPositions[p * 3 + 2] = actualRestZ;
+
+                    emberBasePos[p * 3] = actualRestX;
+                    emberBasePos[p * 3 + 1] = 0.05;
+                    emberBasePos[p * 3 + 2] = actualRestZ;
+
+                    const theta = (p / emberCount) * Math.PI * 2 + (rng() - 0.5) * 0.5;
+                    const speed = 0.8 + rng() * 1.5;
+                    const vUp = 1.2 + rng() * 2.2;
+                    emberVelocities[p * 3] = Math.cos(theta) * speed;
+                    emberVelocities[p * 3 + 1] = vUp;
+                    emberVelocities[p * 3 + 2] = Math.sin(theta) * speed;
+                }
+
+                const emberGeo = new THREE.BufferGeometry();
+                emberGeo.setAttribute('position', new THREE.BufferAttribute(emberPositions, 3));
+                const emberMat = new THREE.PointsMaterial({
+                    map: sparkTexture,
+                    size: 0.65,
+                    transparent: true,
+                    opacity: 0.0,
+                    blending: THREE.AdditiveBlending,
+                    depthWrite: false,
+                    color: new THREE.Color(0xef4444),
+                });
+                const emberPoints = new THREE.Points(emberGeo, emberMat);
+                scene.add(emberPoints);
+
+                sparkBursts.push({
+                    points: emberPoints,
+                    geo: emberGeo,
+                    mat: emberMat,
+                    velocities: emberVelocities,
+                    basePositions: emberBasePos,
+                    startTime: traj.duration,
+                    duration: 1.1,
+                    active: false,
                 });
             }
         }
@@ -535,6 +611,31 @@
                     const pulse = (Math.sin(postT * 6) + 1) / 2;
                     const mat = die.mesh.material as THREE.MeshStandardMaterial;
                     mat.emissiveIntensity = 0.85 + pulse * 0.95;
+                }
+
+                if (supportedDice[i].sides === 20 && supportedDice[i].result === 1 && elapsed >= traj.duration) {
+                    const dt = elapsed - traj.duration;
+                    const fade = Math.max(0, 1 - dt / 0.95);
+
+                    // Sputtering dying red ember numeral flicker
+                    const flicker = Math.sin(dt * 38) > 0 ? (0.7 + Math.random() * 0.3) : 0.1;
+                    const mat = die.mesh.material as THREE.MeshStandardMaterial;
+                    mat.emissive.setHex(0xef4444);
+                    mat.emissiveIntensity = 2.2 * flicker * fade;
+
+                    // Edge lines sputter crimson then extinguish into cold dark charcoal
+                    die.edgeMaterial.color.setRGB(
+                        0.75 * fade + 0.15,
+                        0.15 * fade + 0.15,
+                        0.15 * fade + 0.20,
+                    );
+                    die.edgeMaterial.opacity = 0.85 * fade + 0.25;
+
+                    // Disappointed impact shudder quiver
+                    if (dt >= 0 && dt <= 0.35) {
+                        const quiver = Math.sin(dt * 42) * Math.exp(-dt * 12) * 0.04;
+                        die.mesh.rotation.z += quiver;
+                    }
                 }
             }
 
