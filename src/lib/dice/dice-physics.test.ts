@@ -1,8 +1,16 @@
 import { describe, it, expect } from 'vitest';
 import * as THREE from 'three';
-import { createD20Geometry, createD6Geometry, createD4Geometry } from './dice-geometries';
+import {
+    createD4Geometry,
+    createD6Geometry,
+    createD8Geometry,
+    createD10Geometry,
+    createD12Geometry,
+    createD20Geometry,
+} from './dice-geometries';
 import {
     getRestingOrientationForFace,
+    getUpwardFaceForOrientation,
     generateTimeReversalTrajectory,
     generateMultiDiceTrajectories,
     relaxRestingPositions,
@@ -69,13 +77,13 @@ describe('time-reversal dice physics generator', () => {
         expect(horizontalTravel).toBeGreaterThan(4.0);
         expect(firstFrame.position[1]).toBeGreaterThan(0.5); // Stays on/near table surface
 
-        // Final frame lands at exact resting position
+        // Final frame lands at exact resting position flush on the table surface
         const lastFrame = trajectory.keyframes[trajectory.keyframes.length - 1];
         expect(lastFrame.position[0]).toBeCloseTo(2.0, 2);
-        expect(lastFrame.position[1]).toBeCloseTo(1.0, 2);
+        expect(lastFrame.position[1]).toBeCloseTo(0.795, 2); // Exact D20 inradius resting height
         expect(lastFrame.position[2]).toBeCloseTo(-1.0, 2);
 
-        // Final frame orientation points target face 18 straight UP
+        // Final frame orientation points target face 18 straight UP with precision
         const finalQuat = new THREE.Quaternion(
             lastFrame.quaternion[0],
             lastFrame.quaternion[1],
@@ -84,7 +92,7 @@ describe('time-reversal dice physics generator', () => {
         );
         const localNormal = d20.faceNormals.get(18)!.clone();
         const worldNormal = localNormal.applyQuaternion(finalQuat);
-        expect(worldNormal.dot(new THREE.Vector3(0, 1, 0))).toBeGreaterThan(0.80);
+        expect(worldNormal.dot(new THREE.Vector3(0, 1, 0))).toBeCloseTo(1.0, 4);
     });
 
     it('simulates multiple dice with physical collisions and accurate target results', () => {
@@ -110,19 +118,54 @@ describe('time-reversal dice physics generator', () => {
         const d20LastFrame = trajectories[0].keyframes[trajectories[0].keyframes.length - 1];
         const d20Quat = new THREE.Quaternion(...d20LastFrame.quaternion);
         const d20Normal = d20.faceNormals.get(20)!.clone().applyQuaternion(d20Quat);
-        expect(d20Normal.dot(new THREE.Vector3(0, 1, 0))).toBeGreaterThan(0.70);
+        expect(d20Normal.dot(new THREE.Vector3(0, 1, 0))).toBeCloseTo(1.0, 4);
 
         // Verify die 2 lands on 6
         const d6LastFrame = trajectories[1].keyframes[trajectories[1].keyframes.length - 1];
         const d6Quat = new THREE.Quaternion(...d6LastFrame.quaternion);
         const d6Normal = d6.faceNormals.get(6)!.clone().applyQuaternion(d6Quat);
-        expect(d6Normal.dot(new THREE.Vector3(0, 1, 0))).toBeGreaterThan(0.70);
+        expect(d6Normal.dot(new THREE.Vector3(0, 1, 0))).toBeCloseTo(1.0, 4);
 
         // Verify die 3 (D4) lands with apex 3 pointing straight UP
         const d4LastFrame = trajectories[2].keyframes[trajectories[2].keyframes.length - 1];
         const d4Quat = new THREE.Quaternion(...d4LastFrame.quaternion);
         const d4Apex = d4.faceNormals.get(3)!.clone().applyQuaternion(d4Quat);
-        expect(d4Apex.dot(new THREE.Vector3(0, 1, 0))).toBeGreaterThan(0.70);
+        expect(d4Apex.dot(new THREE.Vector3(0, 1, 0))).toBeCloseTo(1.0, 4);
+    });
+
+    it('guarantees target face is face up across all polyhedral dice types (D4, D6, D8, D10, D12, D20)', () => {
+        const d4 = createD4Geometry(1.0);
+        const d6 = createD6Geometry(1.0);
+        const d8 = createD8Geometry(1.0);
+        const d10 = createD10Geometry(1.0);
+        const d12 = createD12Geometry(1.0);
+        const d20 = createD20Geometry(1.0);
+
+        const testItems = [
+            { die: d4, targetResult: 2 },
+            { die: d6, targetResult: 5 },
+            { die: d8, targetResult: 7 },
+            { die: d10, targetResult: 9 },
+            { die: d12, targetResult: 11 },
+            { die: d20, targetResult: 19 },
+        ];
+
+        const trajectories = generateMultiDiceTrajectories({
+            items: testItems,
+            durationSeconds: 1.0,
+            seed: 'multi-polyhedral-test',
+        });
+
+        for (let i = 0; i < trajectories.length; i++) {
+            const traj = trajectories[i];
+            const item = testItems[i];
+            const lastFrame = traj.keyframes[traj.keyframes.length - 1];
+            const q = new THREE.Quaternion(...lastFrame.quaternion);
+
+            const upward = getUpwardFaceForOrientation(item.die, q);
+            expect(upward.face).toBe(item.targetResult);
+            expect(upward.dot).toBeCloseTo(1.0, 4);
+        }
     });
 
     it('relaxes overlapping resting positions to guarantee physical clearance', () => {

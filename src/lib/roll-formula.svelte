@@ -1,7 +1,6 @@
 <script lang="ts">
-    import { result } from "underscore";
-import {
-    BinaryRollMode,
+    import {
+        BinaryRollMode,
         isBinaryRoll,
         isDiceGroup,
         simplifyRoll,
@@ -18,7 +17,6 @@ import {
     export let roll: Roll;
     export let sign: Sign | undefined = undefined;
     export let animated = true;
-    export let idx = 0;
     let simplifiedRoll: Roll;
 
     $: simplifiedRoll = simplifyRoll(roll);
@@ -132,7 +130,7 @@ import {
         <span class="dice-results">
             {#each adv.results as group}<!--
             --><span class="dice-result-group"><!--
-                -->{#each group as result}<!--
+                -->{#each [...group].sort((a, b) => b - a) as result}<!--
                 --><span class="dice-result"><RollReveal value={result} {animated} /></span><!--
                 -->{/each}<!--
             --></span>
@@ -167,7 +165,7 @@ import {
         {#if sign}<span class="operator">{sign}</span>{/if}
         <span class="spec">{r.results.length === 1 ? '' : r.results.length}d{r.sides}</span>
         <span class="dice-results">
-            {#each r.results as res}
+            {#each [...r.results].sort((a, b) => b - a) as res}
             <span class="dice-result"><RollReveal value={res} {animated} /></span>
             {/each}
         </span>

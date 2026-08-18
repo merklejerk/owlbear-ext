@@ -299,17 +299,40 @@ export function generateMultiDiceTrajectories(options: MultiDiceOptions): DiceTr
 
         const localDelta = new THREE.Quaternion().setFromUnitVectors(targetNormal, landed.normal);
 
+        // Raw terminal orientation with delta
+        const qBaseEnd = finalRawQuat.clone().multiply(localDelta);
+        const currentWorldNormal = targetNormal.clone().applyQuaternion(qBaseEnd);
+        const upVector = new THREE.Vector3(0, 1, 0);
+
+        // Correction quaternion that strictly aligns target face normal with world UP (0, 1, 0)
+        const qCorrection = new THREE.Quaternion().setFromUnitVectors(currentWorldNormal, upVector);
+        const qPerfect = qCorrection.clone().multiply(qBaseEnd);
+        const qIdentity = new THREE.Quaternion();
+
+        // Calculate exact resting center height so die base rests precisely flush on the table (Y = 0)
+        let minY = Infinity;
+        const posAttr = die.geometry.getAttribute('position');
+        const tempV = new THREE.Vector3();
+        for (let v = 0; v < posAttr.count; v++) {
+            tempV.fromBufferAttribute(posAttr, v).applyQuaternion(qPerfect);
+            if (tempV.y < minY) {
+                minY = tempV.y;
+            }
+        }
+        const perfectRestingY = Math.max(0.05, -minY);
+
         // Position offset aligning with relaxed non-overlapping target position
         const finalRawPos = rawFrames[rawFrames.length - 1].pos;
         const posOffset = new THREE.Vector3(
             relaxedRestingPos.x - finalRawPos.x,
-            relaxedRestingPos.y - finalRawPos.y,
+            perfectRestingY - finalRawPos.y,
             relaxedRestingPos.z - finalRawPos.z,
         );
 
         const finalFrames: DiceKeyframe[] = [];
         for (let i = 0; i <= outputSteps; i++) {
-            const rawIdx = (i / outputSteps) * (rawFrames.length - 1);
+            const progress = i / outputSteps;
+            const rawIdx = progress * (rawFrames.length - 1);
             const idx0 = Math.floor(rawIdx);
             const idx1 = Math.min(rawFrames.length - 1, idx0 + 1);
             const alpha = rawIdx - idx0;
@@ -318,7 +341,20 @@ export function generateMultiDiceTrajectories(options: MultiDiceOptions): DiceTr
             const f1 = rawFrames[idx1];
 
             const p = new THREE.Vector3().lerpVectors(f0.pos, f1.pos, alpha).add(posOffset);
-            const q = new THREE.Quaternion().slerpQuaternions(f0.quat, f1.quat, alpha).multiply(localDelta);
+
+            // Base orientation along physics trajectory
+            const qBase = new THREE.Quaternion().slerpQuaternions(f0.quat, f1.quat, alpha).multiply(localDelta);
+
+            // Smoothly blend level alignment during final settle phase (last 35% of trajectory)
+            let q: THREE.Quaternion;
+            if (progress < 0.65) {
+                q = qBase;
+            } else {
+                const u = (progress - 0.65) / 0.35;
+                const blend = u * u * (3 - 2 * u); // smoothstep
+                const currentCorrection = new THREE.Quaternion().slerpQuaternions(qIdentity, qCorrection, blend);
+                q = currentCorrection.multiply(qBase);
+            }
 
             finalFrames.push({
                 position: [p.x, p.y, p.z],
