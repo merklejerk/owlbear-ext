@@ -126,12 +126,12 @@ export function simplifyRoll(roll: Roll): Roll {
     return roll;
 }
 
-interface FlatTerm {
+export interface FlatTerm {
     term: Roll;
     sign: 1 | -1;
 }
 
-function flattenAdditiveTerms(roll: Roll, sign: 1 | -1 = 1): FlatTerm[] {
+export function flattenAdditiveTerms(roll: Roll, sign: 1 | -1 = 1): FlatTerm[] {
     if (isBinaryRoll(roll) && (roll.mode === BinaryRollMode.ADD || roll.mode === BinaryRollMode.SUB)) {
         const leftTerms = flattenAdditiveTerms(roll.rolls[0], sign);
         const rightSign = roll.mode === BinaryRollMode.ADD ? sign : (sign === 1 ? -1 : 1);
@@ -469,4 +469,109 @@ export function extractDiceItems(roll: Roll): Array<{ sides: number; result: num
         return roll.rolls.flatMap(r => extractDiceItems(r));
     }
     return [];
+}
+
+export interface RollDieItem {
+    sides: number;
+    result: number;
+    dropped: boolean;
+}
+
+export type RollAdvantageKind = 'NORMAL' | 'ADVANTAGE' | 'DISADVANTAGE';
+
+export interface RollBreakdown {
+    dice: RollDieItem[];
+    kind: RollAdvantageKind;
+    diceSubtotal: number;
+    modifier: number;
+    total: number;
+    isCritical: boolean;
+    isFumble: boolean;
+}
+
+export function detectAdvantageKind(roll: Roll): RollAdvantageKind {
+    if (isBinaryRoll(roll)) {
+        if (roll.mode === BinaryRollMode.MAX) return 'ADVANTAGE';
+        if (roll.mode === BinaryRollMode.MIN) return 'DISADVANTAGE';
+        const k0 = detectAdvantageKind(roll.rolls[0]);
+        if (k0 !== 'NORMAL') return k0;
+        return detectAdvantageKind(roll.rolls[1]);
+    }
+    return 'NORMAL';
+}
+
+export function extractDiceWithDropStatus(roll: Roll, isParentDropped: boolean = false): RollDieItem[] {
+    if (isDiceGroup(roll)) {
+        return roll.results.map(r => ({ sides: roll.sides, result: r, dropped: isParentDropped }));
+    }
+    if (isBinaryRoll(roll)) {
+        if (roll.mode === BinaryRollMode.MAX || roll.mode === BinaryRollMode.MIN) {
+            const v0 = getRollResult(roll.rolls[0]);
+            const v1 = getRollResult(roll.rolls[1]);
+
+            let drop0 = isParentDropped;
+            let drop1 = isParentDropped;
+
+            if (!isParentDropped) {
+                if (roll.mode === BinaryRollMode.MAX) {
+                    if (v0 > v1) {
+                        drop1 = true;
+                    } else if (v1 > v0) {
+                        drop0 = true;
+                    } else {
+                        drop1 = true;
+                    }
+                } else {
+                    if (v0 < v1) {
+                        drop1 = true;
+                    } else if (v1 < v0) {
+                        drop0 = true;
+                    } else {
+                        drop1 = true;
+                    }
+                }
+            }
+
+            return [
+                ...extractDiceWithDropStatus(roll.rolls[0], drop0),
+                ...extractDiceWithDropStatus(roll.rolls[1], drop1),
+            ];
+        } else {
+            return [
+                ...extractDiceWithDropStatus(roll.rolls[0], isParentDropped),
+                ...extractDiceWithDropStatus(roll.rolls[1], isParentDropped),
+            ];
+        }
+    }
+    return [];
+}
+
+export function extractRollBreakdown(roll: Roll): RollBreakdown {
+    const total = getRollResult(roll);
+    const dice = extractDiceWithDropStatus(roll);
+    const kind = detectAdvantageKind(roll);
+
+    let modifier = 0;
+    const flat = flattenAdditiveTerms(roll);
+    for (const item of flat) {
+        if (typeof item.term === 'number') {
+            modifier += item.sign * item.term;
+        }
+    }
+
+    const diceSubtotal = total - modifier;
+    const isCritical = isCriticalRoll(roll);
+
+    const keptDice = dice.filter(d => !d.dropped);
+    const isFumble = keptDice.length === 1 && keptDice[0].sides === 20 && keptDice[0].result === 1;
+
+    return {
+        dice,
+        kind,
+        diceSubtotal,
+        modifier,
+        total,
+        isCritical,
+        isFumble,
+    };
 }

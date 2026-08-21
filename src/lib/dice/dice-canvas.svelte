@@ -11,10 +11,13 @@
     import { getDieDefinition, isSupportedDieSize, type DieDefinition } from './dice-geometries';
     import { createDiceMaterial, DEFAULT_THEME, type DiceTheme, prewarmDiceAssets, getFacetEdgeColor } from './dice-texture';
     import { generateMultiDiceTrajectories, type DiceTrajectory, MAX_3D_DICE, createMulberry32, hashStringToSeed } from './dice-physics';
+    import type { RollBreakdown } from '$lib/rolls';
+    import DiceResultGather from './dice-result-gather.svelte';
 
     export let dice: RollItem[] = [];
+    export let breakdown: RollBreakdown | null = null;
     export let theme: DiceTheme = DEFAULT_THEME;
-    export let holdDuration: number = 2.5;
+    export let holdDuration: number = 3.2;
     export let seed: string | number | null | undefined = undefined;
     export let width: number = 1200;
     export let height: number = 800;
@@ -23,6 +26,8 @@
     let container: HTMLDivElement;
     let animFrameId: number | null = null;
     let mounted = false;
+    let settled = false;
+    let projectedPositions: Array<{ x: number; y: number }> = [];
 
     // Persistent Three.js Infrastructure
     let scene: THREE.Scene;
@@ -228,9 +233,23 @@
         camera.aspect = renderW / renderH;
         camera.updateProjectionMatrix();
         renderer.setSize(renderW, renderH);
+
+        if (settled && activeDice.length > 0) {
+            projectedPositions = activeDice.map(d => {
+                tempPos0.copy(d.mesh.position);
+                tempPos0.y += d.definition.radius * 1.1 + 0.35;
+                tempPos0.project(camera);
+                return {
+                    x: ((tempPos0.x + 1) / 2) * renderW,
+                    y: ((-tempPos0.y + 1) / 2) * renderH,
+                };
+            });
+        }
     }
 
     function clearRoll() {
+        settled = false;
+        projectedPositions = [];
         if (animFrameId) {
             cancelAnimationFrame(animFrameId);
             animFrameId = null;
@@ -733,7 +752,24 @@
                 renderer.render(scene, camera);
             }
 
-            const totalDuration = maxDuration + holdDuration;
+            if (!settled && elapsed >= maxDuration && activeDice.length > 0 && camera) {
+                settled = true;
+                const currentW = (container?.clientWidth > 0 ? container.clientWidth : (width > 0 ? width : window.innerWidth)) || 1200;
+                const currentH = (container?.clientHeight > 0 ? container.clientHeight : (height > 0 ? height : window.innerHeight)) || 800;
+                projectedPositions = activeDice.map(d => {
+                    tempPos0.copy(d.mesh.position);
+                    tempPos0.y += d.definition.radius * 1.1 + 0.35;
+                    tempPos0.project(camera);
+                    return {
+                        x: ((tempPos0.x + 1) / 2) * currentW,
+                        y: ((-tempPos0.y + 1) / 2) * currentH,
+                    };
+                });
+            }
+
+            const hasModifier = effectiveBreakdown ? effectiveBreakdown.modifier !== 0 : false;
+            const actualHold = count > 1 ? holdDuration : (hasModifier ? 2.6 : Math.min(2.2, holdDuration));
+            const totalDuration = maxDuration + actualHold;
             const fadeDuration = 0.5;
             if (elapsed >= totalDuration - fadeDuration) {
                 const fadeProgress = Math.min(1.0, (elapsed - (totalDuration - fadeDuration)) / fadeDuration);
@@ -762,6 +798,16 @@
 
         animFrameId = requestAnimationFrame(animate);
     }
+
+    $: effectiveBreakdown = breakdown || (dice && dice.length > 0 ? {
+        dice: dice.map(d => ({ sides: d.sides, result: d.result, dropped: false })),
+        kind: 'NORMAL' as const,
+        diceSubtotal: dice.reduce((a, d) => a + d.result, 0),
+        modifier: 0,
+        total: dice.reduce((a, d) => a + d.result, 0),
+        isCritical: dice.length === 1 && dice[0].sides === 20 && dice[0].result === 20,
+        isFumble: dice.length === 1 && dice[0].sides === 20 && dice[0].result === 1,
+    } : null);
 
     $: if (mounted) {
         if (dice && dice.length > 0) {
@@ -906,4 +952,14 @@
     }
 </style>
 
-<div class="dice-canvas-container" bind:this={container}></div>
+<div class="dice-canvas-container" bind:this={container}>
+    {#if settled && effectiveBreakdown && (effectiveBreakdown.dice.length > 1 || effectiveBreakdown.modifier !== 0)}
+        <DiceResultGather
+            breakdown={effectiveBreakdown}
+            {projectedPositions}
+            {theme}
+            width={width > 0 ? width : (container?.clientWidth || 1200)}
+            height={height > 0 ? height : (container?.clientHeight || 800)}
+        />
+    {/if}
+</div>

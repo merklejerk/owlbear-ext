@@ -7,10 +7,10 @@
     import { getObr, getPlayersStore } from "$lib/obr-host.svelte";
     import DiceCanvas, { type RollItem } from "$lib/dice/dice-canvas.svelte";
     import { createPlayerDiceTheme, DEFAULT_THEME, type DiceTheme } from "$lib/dice/dice-texture";
+    import { isRollMsg, type BroadcastMsg } from "$lib/types";
     import { isSupportedDieSize } from "$lib/dice/dice-geometries";
     import { MAX_3D_DICE } from "$lib/dice/dice-physics";
-    import { isRollMsg, type BroadcastMsg } from "$lib/types";
-    import { extractDiceItems } from "$lib/rolls";
+    import { extractDiceItems, extractRollBreakdown, type RollBreakdown } from "$lib/rolls";
     import { is3dDiceEnabled } from "$lib/dice-settings";
     import { fade } from "svelte/transition";
 
@@ -18,6 +18,7 @@
     const players = getPlayersStore();
 
     let activeDice: RollItem[] = [];
+    let activeBreakdown: RollBreakdown | null = null;
     let activeTheme: DiceTheme = DEFAULT_THEME;
     let activeSeed: string | undefined = undefined;
     let isRolling = false;
@@ -84,6 +85,7 @@
             activeTheme = theme;
             activeSeed = msg.data.rollId;
             activeDice = supportedDice;
+            activeBreakdown = msg.data.rolls?.[0] ? extractRollBreakdown(msg.data.rolls[0]) : null;
             isRolling = true;
         });
     });
@@ -99,6 +101,7 @@
         isRolling = false;
         setTimeout(async () => {
             activeDice = [];
+            activeBreakdown = null;
             await setPopoverSize(0, 0);
         }, 180);
     }
@@ -176,6 +179,7 @@
     >
     <DiceCanvas
         dice={activeDice}
+        breakdown={activeBreakdown}
         theme={activeTheme}
         seed={activeSeed}
         width={currentWidth}

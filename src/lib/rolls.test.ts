@@ -9,6 +9,7 @@ import {
     type BinaryRoll,
     ParseRollError,
     extractDiceItems,
+    extractRollBreakdown,
     normalizeRollExpression,
     deleteLastTerm,
 } from './rolls';
@@ -190,6 +191,111 @@ describe('rolls parser & evaluator', () => {
 
         it('handles fallback for invalid syntax', () => {
             expect(deleteLastTerm('something + else')).toBe('something');
+        });
+    });
+
+    describe('extractRollBreakdown', () => {
+        it('breaks down multi-dice with positive bonus (3d6 + 2 => 3, 3, 4 + 2 = 12)', () => {
+            const roll: BinaryRoll = {
+                mode: BinaryRollMode.ADD,
+                rolls: [
+                    { sides: 6, results: [3, 3, 4] },
+                    2,
+                ],
+            };
+            const breakdown = extractRollBreakdown(roll);
+            expect(breakdown.dice).toEqual([
+                { sides: 6, result: 3, dropped: false },
+                { sides: 6, result: 3, dropped: false },
+                { sides: 6, result: 4, dropped: false },
+            ]);
+            expect(breakdown.diceSubtotal).toBe(10);
+            expect(breakdown.modifier).toBe(2);
+            expect(breakdown.total).toBe(12);
+            expect(breakdown.isCritical).toBe(false);
+            expect(breakdown.isFumble).toBe(false);
+        });
+
+        it('breaks down single die with negative modifier (1d20 - 3 => 15 - 3 = 12)', () => {
+            const roll: BinaryRoll = {
+                mode: BinaryRollMode.SUB,
+                rolls: [
+                    { sides: 20, results: [15] },
+                    3,
+                ],
+            };
+            const breakdown = extractRollBreakdown(roll);
+            expect(breakdown.dice).toEqual([{ sides: 20, result: 15, dropped: false }]);
+            expect(breakdown.diceSubtotal).toBe(15);
+            expect(breakdown.modifier).toBe(-3);
+            expect(breakdown.total).toBe(12);
+        });
+
+        it('breaks down dice group without modifiers (4d6 => 3, 4, 5, 2 = 14)', () => {
+            const roll: DiceGroup = { sides: 6, results: [3, 4, 5, 2] };
+            const breakdown = extractRollBreakdown(roll);
+            expect(breakdown.dice.length).toBe(4);
+            expect(breakdown.diceSubtotal).toBe(14);
+            expect(breakdown.modifier).toBe(0);
+            expect(breakdown.total).toBe(14);
+        });
+
+        it('breaks down advantage roll and marks lower die as dropped (d20a + 3 => 14 [kept] & 8 [dropped] + 3 = 17)', () => {
+            const roll: BinaryRoll = {
+                mode: BinaryRollMode.ADD,
+                rolls: [
+                    {
+                        mode: BinaryRollMode.MAX,
+                        rolls: [
+                            { sides: 20, results: [14] },
+                            { sides: 20, results: [8] },
+                        ],
+                    },
+                    3,
+                ],
+            };
+            const breakdown = extractRollBreakdown(roll);
+            expect(breakdown.kind).toBe('ADVANTAGE');
+            expect(breakdown.dice).toEqual([
+                { sides: 20, result: 14, dropped: false },
+                { sides: 20, result: 8, dropped: true },
+            ]);
+            expect(breakdown.diceSubtotal).toBe(14);
+            expect(breakdown.modifier).toBe(3);
+            expect(breakdown.total).toBe(17);
+        });
+
+        it('breaks down disadvantage roll and marks higher die as dropped (d20d => 18 [dropped] & 9 [kept] = 9)', () => {
+            const roll: BinaryRoll = {
+                mode: BinaryRollMode.MIN,
+                rolls: [
+                    { sides: 20, results: [18] },
+                    { sides: 20, results: [9] },
+                ],
+            };
+            const breakdown = extractRollBreakdown(roll);
+            expect(breakdown.kind).toBe('DISADVANTAGE');
+            expect(breakdown.dice).toEqual([
+                { sides: 20, result: 18, dropped: true },
+                { sides: 20, result: 9, dropped: false },
+            ]);
+            expect(breakdown.diceSubtotal).toBe(9);
+            expect(breakdown.modifier).toBe(0);
+            expect(breakdown.total).toBe(9);
+        });
+
+        it('detects natural 20 critical rolls', () => {
+            const roll: DiceGroup = { sides: 20, results: [20] };
+            const breakdown = extractRollBreakdown(roll);
+            expect(breakdown.isCritical).toBe(true);
+            expect(breakdown.isFumble).toBe(false);
+        });
+
+        it('detects natural 1 fumble rolls', () => {
+            const roll: DiceGroup = { sides: 20, results: [1] };
+            const breakdown = extractRollBreakdown(roll);
+            expect(breakdown.isCritical).toBe(false);
+            expect(breakdown.isFumble).toBe(true);
         });
     });
 });
